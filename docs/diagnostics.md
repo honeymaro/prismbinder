@@ -82,6 +82,8 @@ A ZIP states an entry's inflated size, and nothing makes that statement true. Th
 | `bundle/table-missing-storage` | warning | A table has no `content.json` or no `data.csv`. |
 | `bundle/row-count-mismatch` | warning | `content.json` and `data.csv` disagree on the row count. |
 | `bundle/orphan-graph` | info | A `graphs/<uuid>/data.bin` with no `sheet.json`, referenced from nowhere. Real files contain these; it is carried through verbatim. |
+| `bundle/series-without-parameters` | warning | A dataset declares itself a generated series - so it occupies no CSV column - but records no `startValue` and `interval`. Its X values cannot be rebuilt from anything in the file. |
+| `bundle/unreadable-cell-range` | warning | A `cellAttributes` entry names its rows in a form the range grammar does not accept (`"12"` or `"3~7"`). The mark is dropped, which downgrades an excluded value to an ordinary one, so it is said out loud. |
 
 ## pzfx (`.pzfx` and XML `.pzt`)
 

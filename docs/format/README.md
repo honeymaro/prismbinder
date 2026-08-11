@@ -156,7 +156,7 @@ Order is row titles, then X, then each dataset's block in `dataSets` order.
 
 Two traps:
 
-- An X dataset whose own `format` is `series` **occupies no column** - its values are generated from a start value and an interval.
+- An X dataset whose own `format` is `series` **occupies no column** - its values are generated. The dataset's single replicate is a `SeriesReplicate` carrying `startValue` and `interval`, and the rule is arithmetic: `x[i] = startValue + i * interval`, for `content.json.numberOfRows` values. Three documents do this, all with 1000 rows; two of them land on exactly `1000.0` and `72.0` at the last row, where a geometric reading gives `0.2459` and `1.0`. A reader that walks only the stored columns loses the X axis of these tables entirely.
 - `subcolumnTitlesDataSet` also occupies no column; it is a header row.
 
 The table's `dataFormat` decides the layout, **not** the datasets' own `format`, and the two can disagree: both `y_high_low` tables in the corpus contain datasets whose individual format is `y_plus_minus`.
@@ -165,8 +165,23 @@ The table's `dataFormat` decides the layout, **not** the datasets' own `format`,
 
 - `y_high_low` stores **two independent offsets**, not absolute bounds. The two are unequal in real data.
 - `y_plus_minus` likewise stores separate up and down offsets, so "+/-" is not symmetric in storage.
-- `y_sd` stores the SD directly.
-- `y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n` and `y_se` **do not appear in any file we have**. A third-party report suggests `y_cv*` stores SD and displays `%CV`, but we cannot confirm it, so these are reported as `unknown` rather than guessed.
+- `y_sd`, `y_se`, `y_sd_n` and `y_se_n` store what their names say. Every dataset inside such a table declares the same format as the table.
+- **`y_cv` and `y_cv_n` store a standard deviation**, not a coefficient of variation. The disagreement between the two axes is what says so: every dataset inside a `y_cv` table declares its own format as `y_sd`, and inside a `y_cv_n` table as `y_sd_n`. Prism computes the percentage for display. A reader that shows the stored number under the %CV heading is out by a factor of the mean. This confirms a third-party report that could not previously be checked. Evidence is one document, which is why the finding is recorded with its basis rather than as a bare rule.
+
+All five formats above were absent from the original corpus and are present now. The subcolumn counts in the table above are confirmed for every one of them: the computed layout matches `numberOfColumns` on 95 of 95 tables.
+
+### Cells carry flags the CSV cannot express
+
+`replicates[].cellAttributes` marks rows inside one subcolumn, as inclusive ranges: `"34"` for a single row, `"0~1"` for a span. The attributes that change what a number means:
+
+| Attribute | Meaning |
+|---|---|
+| `EXCLUDED` | Prism keeps the value visible on the table and leaves it out of **every analysis and every graph**. Reading it as ordinary data reports numbers Prism does not use. |
+| `CENSORED` | Survival tables: the subject was still alive when observation stopped. 29 cells in the corpus. |
+| `SECTION_TITLE` | A row used as a heading rather than data. |
+| `OUTLIER`, `ERRONEOUS_VALUE`, `BAD_VALUE` | Marked by Prism's own outlier and validation passes. |
+
+`.pzfx` records the same idea per cell instead, as `<d Excluded="1">`.
 
 ### Derived state in `data/sets/*.json`
 
@@ -204,6 +219,44 @@ Sample `.xml` files wrap the document in an XSLT stylesheet so a browser renders
 
 The shipped `PrismXMLSchema.xml` is XDR (a Microsoft pre-XSD dialect), describes itself as being for Prism 9.0, and is out of date: `CategoryDictionary` and twelve attributes including `CellType`, `UserText`, `MVType` and `num` are used but not declared, while `HugeTable`, `Table1024` and `Script` are declared but never appear.
 
+Out of date is not the same as useless. Where the schema *does* enumerate values it is authoritative, and the user guide points programmers at it for exactly this purpose. A writer must stay inside these sets:
+
+| Attribute | Values |
+|---|---|
+| `XFormat` | `none` `text` `numbers` `error` `series` `date` `startenddate` `time` |
+| `YFormat` | `replicates` `SD` `SE` `CV` `SDN` `SEN` `CVN` `low-high` `text` `upper-lower-limits` |
+| `TableType` | `Result` `Legacy` `XY` `OneWay` `TwoWay` `Contingency` `Survival` `PartsOfWhole` |
+| `ExtTableType` | `MultipleVariables` (the schema's only member; real Prism 11 files also write `Nested`) |
+| `EVFormat` | `Number` `AsteriskAfterNumber` `Blank` |
+
+Note there is no `number` and no `none` for `YFormat`. Both are easy inventions and neither appears in any of the 137 pzfx-family documents examined.
+
+The combinations are constrained beyond the individual enumerations, and the corpus is consistent about them:
+
+- **Whether `YFormat` appears is a property of the table kind, not of the column width.** `OneWay` never carries it (41 of 41), nor do `Survival` (5) or `Contingency` (5). No `XY` table omits it - including all 36 whose columns hold a single subcolumn, which write `YFormat="replicates" Replicates="1"`. `PartsOfWhole` does the same, 7 of 7.
+- `Replicates` appears only alongside `YFormat="replicates"`. The error-bar layouts never carry it.
+- An `XY` table always has an X column; a table without one is `OneWay` when its columns are single and `TwoWay` when they are not.
+- An X wider than one subcolumn is `XFormat="error"`.
+
+`YFormat` is the attribute that decides what the numbers *are*. Writing `replicates` for a mean-and-SD pair is not a mislabel: Prism averages replicates, so `(100, 10)` is read as 55.
+
+### The eight table kinds, in both vocabularies
+
+The user guide names eight; the two generations spell them differently, and two of them are not a `TableType` at all.
+
+| Kind | Bundle `table.format` | `.pzfx` |
+|---|---|---|
+| XY | `xy` | `TableType="XY"` |
+| Column | `column` | `OneWay` |
+| Grouped | `grouped` | `TwoWay` |
+| Contingency | `contingency` | `Contingency` |
+| Survival | `survival` | `Survival` |
+| Parts of whole | `partsofwhole` | `PartsOfWhole` |
+| Multiple variables | `multivariable` | `OneWay` + `ExtTableType="MultipleVariables"` |
+| Nested | `nested` | `TwoWay` + `ExtTableType="Nested"` |
+
+The bundle also uses `view` for a results table, `control`, `obsolete` and `undefined`.
+
 ---
 
 ## 7. What we deliberately do not read
@@ -218,7 +271,8 @@ The shipped `PrismXMLSchema.xml` is XDR (a Microsoft pre-XSD dialect), describes
 
 | Question | Status |
 |---|---|
-| What do `y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n`, `y_se` store? | No examples in any available file |
+| ~~What do `y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n`, `y_se` store?~~ | **Answered.** All five now appear. `y_se`, `y_sd_n` and `y_se_n` store what they name; `y_cv` and `y_cv_n` store SD. See section 5 |
+| Does `upper-lower-limits` mean the same thing in both formats? | `.pzfx` distinguishes it from `low-high`; the bundle has one name, `y_high_low`, for both. Which of the two a bundle holds is not recorded anywhere we have found |
 | Is `.dt` a checksum or a random revision token? | 88 samples, all distinct, matching no digest of their siblings |
 | What is the minimum entry set Prism will open? | Needs testing against Prism |
 | Does entry order matter? | Consistent within each document; untested |

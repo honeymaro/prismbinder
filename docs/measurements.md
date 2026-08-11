@@ -303,6 +303,59 @@ Nothing is committed: `tools/fetch-external-fixtures.mjs` downloads them from pi
 
 ---
 
+## M12 - reading the vendor's own documentation (2026-08-11)
+
+1,495 pages of the Prism 11 guides went past the implementation, looking for anything the format work had not covered. The guides are about using Prism, so most of it does not touch a file format at all. Four things did, and one of them pointed at a file already sitting on disk.
+
+**The user guide tells programmers to read `PrismXMLSchema.xml`**, shipped in the Prism program folder, "using that (and by exporting sample files from Prism) a programmer could enable other programs to export data in Prism XML format". That file had been examined before, for which elements and attributes exist (M-N10: it is XDR, it describes Prism 9, twelve attributes in real files are undeclared). Its *enumerations* had never been checked against what we write. They should have been - the `.pzfx` writer was emitting three values that are in no enumeration and in none of the 137 pzfx-family documents examined:
+
+| Written | Problem |
+|---|---|
+| `XFormat="number"` | The member is `numbers`. Singular appears nowhere |
+| `YFormat="none"` | No such member. Real files omit the attribute; 52 tables do |
+| `TableType="XY"` on a table with no X column | Every `XY` table in the corpus has an X. Such a table is `OneWay` or `TwoWay` |
+
+Plus an internal inconsistency the schema had nothing to say about: `<XColumn Subcolumns="1">` was hardcoded while all of the X subcolumns were written after it, so an X with error values announced a width it did not have.
+
+None of this was caught because our own reader is permissive: it reads attributes it does not validate, so everything round-tripped cleanly. The suite now checks the written document against the enumerations rather than against ourselves.
+
+**Excluded values had no representation at all.** The `.pzfx` reader parsed `Excluded="1"` and the model discarded it; the bundle's `cellAttributes` were never read. Prism keeps such a value visible on the table and leaves it out of every analysis and every graph, and its own export dialog asks what to do about it - which is the tell that the question has no default answer. `export` emitted them as ordinary numbers with nothing to say so. The same mechanism carries `CENSORED`, without which a survival table's meaning is not recoverable.
+
+**Generated X columns were dropped.** An X dataset whose format is `series` occupies no CSV column; its values come from a start value and an interval. Reading only the stored columns lost the X axis of three documents, 1000 rows each - and the exported table looked like a perfectly ordinary one with no X, which is worse than an error. The rule is arithmetic, `startValue + i * interval`; two of the three land on exactly `1000.0` and `72.0` at the last row, against `0.2459` and `1.0` for a geometric reading.
+
+**The pzfx half of the model reported `storage: 'direct'` unconditionally**, and put the XML's own `YFormat` spelling into a field that holds the bundle's vocabulary everywhere else. So `low-high` - a value with two offsets - was reported as though the stored numbers were the displayed ones, which is the single answer `StorageSemantics` exists to prevent, and the same table read as `low-high` or `y_high_low` depending on which file it came from.
+
+Two facts fell out of chasing that last one. `upper-lower-limits` is genuinely different from `low-high`: it stores absolute bounds (100, 110, 70) where the other stores offsets (100, 10, 30), and the bundle vocabulary has one name for both. And an open question closed: **`y_cv` stores a standard deviation.** Every dataset inside a `y_cv` table declares its own format as `y_sd`, and inside `y_cv_n` as `y_sd_n`. A third-party report had claimed this; it could not be checked while the corpus had no such table, and now it can.
+
+**The general point.** M11 was about the corpus being too narrow. This one is different: the answer was in a file the vendor ships specifically so that other software can write this format, and the project had already opened that file for a different question. Reading a source once, for one purpose, is not the same as having read it.
+
+---
+
+## M13 - reviewing M12 (2026-08-11)
+
+The M12 changes went through review before landing. Four of the findings were in the code M12 had just added.
+
+**Two of them were denial of service, and both were new.** Reading the generated X column meant knowing how many rows to generate, and the row count was taken as `max(rows in the CSV, numberOfRows from content.json)`. Nothing validates `numberOfRows`. A 1,299-byte archive claiming twenty million rows exhausted the heap and killed the process. Separately, expanding `cellAttributes` ranges cost `ranges x span`, and both come from the file: 5,000 copies of one full-width range in a 2,666-byte archive burned 92 seconds of CPU.
+
+Neither is a decompression bomb, which is why the existing ZIP defences - ratio caps, entry counts, bounded inflation - did nothing. The amplification is a small integer.
+
+| | before | after |
+|---|---|---|
+| 1,299 B, 20,000,000 claimed rows | heap exhausted, process killed | 33 ms, 0 cells, 7 MB |
+| 2,666 B, 500,000,000 range expansions | 91,841 ms | 121 ms |
+
+The fix for the first is to stop consulting `numberOfRows` at all: producing a row costs a row of bytes, claiming one costs ten characters, and the two agree on all 95 tables in the corpus. The fix for the second is a per-subcolumn budget - a subcolumn cannot have more marked cells than it has cells.
+
+**One was a fix that was only half right.** M12 replaced `YFormat="none"`, which is in no enumeration, with omitting the attribute whenever a column had one subcolumn. Recounting the corpus by table kind rather than by width showed that no `XY` table omits `YFormat` - all 36 single-subcolumn ones write `replicates` with a count of one - so the new output was a combination that appears in none of the 137 documents. One unattested thing had been swapped for another. The rule is the table kind: `OneWay`, `Survival` and `Contingency` omit it, nothing else does.
+
+**One was older than M12 but newly dangerous because of it.** `convert` never told the `.pzfx` writer what the subcolumns meant, so every error-bar table went out as `YFormat="replicates"`. The fixture set happens to contain the same document in both formats, which makes Prism its own oracle: our conversion disagreed with Prism's on 9 of 13 tables, writing `replicates` where Prism writes `SDN`, `SEN`, `CVN`, `CV`, `low-high`, `upper-lower-limits`. Prism averages replicates, so a mean of 100 with an SD of 10 would have come back as 55. This was not introduced by M12 - but M12 made the file schema-conformant, and a file Prism rejects cannot be misread by it. Wiring the layout through brings the disagreement down to 2, both of them losses the conversion now declares: the table kind is rebuilt from the columns, and the bundle keeps no record of whether a three-subcolumn error layout held offsets or absolute limits.
+
+**And a parser that was too willing.** `Number("")` is `0`, so `rows: ""`, `"~5"` and `"0~"` all parsed as valid ranges naming row 0. Matching a grammar instead of coercing fixes it, and dropping a mark now says so - an ignored exclusion turns a value Prism never uses into ordinary data.
+
+**The general point.** M12 was written to stop the library from quietly mishandling data, and three of its own additions did something in that family. The two that mattered most were not visible in any test that reads a real file, because real files are not adversarial: they needed a file built to be hostile. That suite now exists.
+
+---
+
 ## Outstanding - requires the Prism GUI
 
 | ID | Content | Status |
@@ -311,4 +364,5 @@ Nothing is committed: `tools/fetch-external-fixtures.mjs` downloads them from pi
 | ~~P0-open~~ | Does a generated bundle open in Prism? | **resolved 2026-08-11**. It does. See M6 |
 | P1 | E0-a/b/c plus 6 section-removal candidates | waiting |
 | P2 | Four before/after mutation pairs (makes T2 non-circular) | waiting |
-| P3 | Unobserved `dataFormat` values (`y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n`, `y_se`) | waiting |
+| ~~P3~~ | Unobserved `dataFormat` values (`y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n`, `y_se`) | **resolved by M11 and M12.** All five appear in the widened corpus, the subcolumn counts match on 95/95 tables, and `y_cv*` is settled |
+| P4 | Does Prism open a `.pzfx` we wrote? | waiting. The output is now schema-conformant, which is necessary and not sufficient |
