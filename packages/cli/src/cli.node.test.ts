@@ -18,6 +18,22 @@ import { beforeAll, describe, expect, it } from 'vitest'
 const CLI = resolve('packages/cli/dist/cli.js')
 let dir = ''
 
+/**
+ * A minimal but real `.pzfx`: CRLF endings, one table, one column, one cell.
+ *
+ * `SECRETVALUE` is there so a test can assert it never reaches stdout, and the
+ * whole document is reused by `verify` so both commands are exercised against
+ * the same bytes.
+ */
+const PZFX =
+  '<?xml version="1.0" encoding="UTF-8"?>\r\n' +
+  '<GraphPadPrismFile PrismXMLVersion="5.00">\r\n' +
+  '<Table ID="T0" XFormat="none" YFormat="none" Replicates="1" TableType="XY">\r\n' +
+  '<Title>T</Title>\r\n' +
+  '<YColumn Width="81" Decimals="6" Subcolumns="1"><Title>A</Title>' +
+  '<Subcolumn><d>SECRETVALUE</d></Subcolumn></YColumn>\r\n' +
+  '</Table>\r\n</GraphPadPrismFile>\r\n'
+
 interface Run {
   readonly code: number
   readonly stdout: string
@@ -90,16 +106,7 @@ describe.skipIf(!existsSync(CLI))('inspect --json', () => {
     // files, bug reports and CI logs, and part of the corpus is unpublished
     // research data.
     const xml = join(dir, 'doc.pzfx')
-    writeFileSync(
-      xml,
-      '<?xml version="1.0" encoding="UTF-8"?>\r\n' +
-        '<GraphPadPrismFile PrismXMLVersion="5.00">\r\n' +
-        '<Table ID="T0" XFormat="none" YFormat="none" Replicates="1" TableType="XY">\r\n' +
-        '<Title>T</Title>\r\n' +
-        '<YColumn Width="81" Decimals="6" Subcolumns="1"><Title>A</Title>' +
-        '<Subcolumn><d>SECRETVALUE</d></Subcolumn></YColumn>\r\n' +
-        '</Table>\r\n</GraphPadPrismFile>\r\n',
-    )
+    writeFileSync(xml, PZFX)
     const r = run('inspect', xml, '--json')
     expect(r.stdout).not.toContain('SECRETVALUE')
     expect(r.stdout).toContain('"sheets"')
@@ -118,6 +125,34 @@ describe.skipIf(!existsSync(CLI))('diff', () => {
     writeFileSync(junk, 'not a prism file')
     const r = run('diff', join(dir, 'sample.prism'), junk)
     expect(r.code).not.toBe(0)
+  })
+})
+
+describe.skipIf(!existsSync(CLI))('verify', () => {
+  it('round-trips a bundle byte-for-byte', () => {
+    const r = run('verify', join(dir, 'sample.prism'))
+    expect(r.code).toBe(0)
+    expect(r.stdout).toContain('byte-identical round trip')
+  })
+
+  it('round-trips an XML document too', () => {
+    // The command exists to prove byte fidelity, and for a while it only knew
+    // how to do that for ZIP bundles - so the format where fidelity is the
+    // harder problem was the one it could not check.
+    const xml = join(dir, 'doc.pzfx')
+    writeFileSync(xml, PZFX)
+    const r = run('verify', xml)
+    expect(r.code).toBe(0)
+    expect(r.stdout).toContain('byte-identical round trip')
+  })
+
+  it('reports a file it cannot parse, and says why', () => {
+    const junk = join(dir, 'broken.pzfx')
+    writeFileSync(junk, 'not xml at all')
+    const r = run('verify', junk)
+    expect(r.code).toBe(1)
+    expect(r.stderr).toContain('could not be parsed')
+    expect(r.stderr, 'a bare refusal tells the user nothing').toMatch(/xml\//)
   })
 })
 

@@ -15,8 +15,10 @@ import {
   anonymizeBundle,
   createBundle,
   readBundle,
+  readPzfx,
   writeBundle,
   writeBundleWith,
+  writePzfx,
 } from '@prismbinder/formats'
 import { readProject, toBundle, toPzfx } from '@prismbinder/model'
 import { buildDiff, formatDiff } from './diff.js'
@@ -93,15 +95,9 @@ function cmdInspect(file: string, asJson: boolean, quiet: boolean): number {
 function inspectDocument(file: string, bytes: Uint8Array, asJson: boolean, quiet: boolean): number {
   const { value, diagnostics } = readProject(bytes, file)
   if (value === undefined) {
-    if (asJson)
-      stdout.write(`${JSON.stringify({ file, error: true, diagnostics }, null, 2)}
-`)
-    else
-      stderr.write(`prismbinder: ${file} could not be read
-`)
-    for (const d of diagnostics)
-      stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}
-`)
+    if (asJson) stdout.write(`${JSON.stringify({ file, error: true, diagnostics }, null, 2)}\n`)
+    else stderr.write(`prismbinder: ${file} could not be read\n`)
+    for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}\n`)
     return EXIT_DIAGNOSTICS
   }
 
@@ -132,18 +128,12 @@ function inspectDocument(file: string, bytes: Uint8Array, asJson: boolean, quiet
       })),
       diagnostics,
     }
-    stdout.write(`${JSON.stringify(summary, null, 2)}
-`)
+    stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
   } else if (!quiet) {
     const kb = (bytes.length / 1024).toFixed(1)
-    stdout.write(`${file}  (${kb} KB, ${value.source})
-`)
-    if (value.formatVersion !== undefined)
-      stdout.write(`  format ${value.formatVersion}
-`)
-    for (const n of value.notes)
-      stdout.write(`  ${n}
-`)
+    stdout.write(`${file}  (${kb} KB, ${value.source})\n`)
+    if (value.formatVersion !== undefined) stdout.write(`  format ${value.formatVersion}\n`)
+    for (const n of value.notes) stdout.write(`  ${n}\n`)
 
     const data = value.sheets.filter((s) => s.kind === 'data')
     if (data.length > 0) {
@@ -154,8 +144,7 @@ function inspectDocument(file: string, bytes: Uint8Array, asJson: boolean, quiet
         if (s.kind !== 'data') continue
         const cols = s.table.columns.reduce((a, c) => a + c.subcolumns.length, 0)
         const shape = `${s.table.rowCount}x${cols}`.padStart(9)
-        stdout.write(`    ${s.title.slice(0, 42).padEnd(44)}${shape}  ${s.table.dataFormat}
-`)
+        stdout.write(`    ${s.title.slice(0, 42).padEnd(44)}${shape}  ${s.table.dataFormat}\n`)
       }
     }
   }
@@ -171,12 +160,8 @@ function inspectDocument(file: string, bytes: Uint8Array, asJson: boolean, quiet
  */
 function cmdDiff(left: string, right: string, withCells: boolean, asJson: boolean): number {
   const report = buildDiff(left, readInput(left), right, readInput(right), withCells)
-  if (asJson)
-    stdout.write(`${JSON.stringify(report, null, 2)}
-`)
-  else
-    stdout.write(`${formatDiff(report)}
-`)
+  if (asJson) stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+  else stdout.write(`${formatDiff(report)}\n`)
 
   // Three outcomes, not two: identical, different, and could-not-tell. The
   // last one must never share an exit code with the first.
@@ -232,9 +217,7 @@ function cmdExtract(file: string, outDir: string): number {
     const content = readEntry(entry)
     const failed = content.diagnostics.filter((d) => d.severity === 'error')
     if (failed.length > 0) {
-      for (const d of failed)
-        stderr.write(`prismbinder: skipping ${d.path}: ${d.message}
-`)
+      for (const d of failed) stderr.write(`prismbinder: skipping ${d.path}: ${d.message}\n`)
       continue
     }
 
@@ -246,12 +229,35 @@ function cmdExtract(file: string, outDir: string): number {
       written++
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err)
-      stderr.write(`prismbinder: could not write ${entry.name}: ${why}
-`)
+      stderr.write(`prismbinder: could not write ${entry.name}: ${why}\n`)
     }
   }
   stdout.write(`extracted ${written} entries to ${root}\n`)
   return diagnostics.some((d) => d.severity === 'error') ? EXIT_DIAGNOSTICS : EXIT_OK
+}
+
+/** The `.pzfx` half of `verify`: parse, print, compare. */
+function verifyDocument(file: string, bytes: Uint8Array): number {
+  const { value, diagnostics } = readPzfx(bytes, file)
+  if (value === undefined) {
+    stderr.write(`prismbinder: ${file} could not be parsed\n`)
+    for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.message}\n`)
+    return EXIT_DIAGNOSTICS
+  }
+
+  const out = writePzfx(value)
+  const identical = bytesEqual(out, bytes)
+  stdout.write(
+    identical
+      ? `${file}: byte-identical round trip (${bytes.length} bytes, ${value.tables.length} tables)\n`
+      : `${file}: MISMATCH - re-written file is ${out.length} bytes, original is ${bytes.length}\n`,
+  )
+  if (value.hasTemplate) {
+    stdout.write('  graphs and formatting are inside an opaque <Template> blob, carried unread\n')
+  }
+  const errors = diagnostics.filter((d) => d.severity === 'error')
+  for (const d of errors) stderr.write(`  error ${d.code} ${d.path} ${d.message}\n`)
+  return identical && errors.length === 0 ? EXIT_OK : EXIT_DIAGNOSTICS
 }
 
 /**
@@ -262,9 +268,18 @@ function cmdExtract(file: string, outDir: string): number {
  */
 function cmdVerify(file: string): number {
   const bytes = readInput(file)
+
+  // Both formats, dispatched on magic bytes. This command exists to prove byte
+  // fidelity, and for a while it could only do so for ZIP bundles - the XML
+  // half of the project, where the fidelity problem is actually harder, had no
+  // way to be checked from the command line at all.
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04
+  if (!isZip) return verifyDocument(file, bytes)
+
   const { value, diagnostics } = readBundle(bytes)
   if (value === undefined) {
     stderr.write(`prismbinder: ${file} could not be parsed\n`)
+    for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.message}\n`)
     return EXIT_DIAGNOSTICS
   }
   const out = writeBundle(value)
@@ -293,11 +308,8 @@ function cmdAnonymize(input: string, output: string): number {
   const bytes = readInput(input)
   const { value, diagnostics } = readBundle(bytes)
   if (value === undefined) {
-    stderr.write(`prismbinder: ${input} could not be parsed
-`)
-    for (const d of diagnostics)
-      stderr.write(`  ${d.severity} ${d.code} ${d.message}
-`)
+    stderr.write(`prismbinder: ${input} could not be parsed\n`)
+    for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.message}\n`)
     return EXIT_DIAGNOSTICS
   }
   const before = {
@@ -308,15 +320,11 @@ function cmdAnonymize(input: string, output: string): number {
   const cleared = [before.created, before.modified].filter((u) => u !== '').length
   stdout.write(
     cleared === 0
-      ? `${output}: written (no account names were present)
-`
-      : `${output}: written, ${cleared} account name(s) cleared
-`,
+      ? `${output}: written (no account names were present)\n`
+      : `${output}: written, ${cleared} account name(s) cleared\n`,
   )
   // Anonymising a document we only partly understood is worth saying out loud.
-  for (const d of diagnostics)
-    stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}
-`)
+  for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}\n`)
   return diagnostics.some((d) => d.severity === 'error') ? EXIT_DIAGNOSTICS : EXIT_OK
 }
 
@@ -325,11 +333,8 @@ function cmdExport(file: string, outDir: string, format: ExportFormat): number {
   const bytes = readInput(file)
   const { value, diagnostics } = readProject(bytes, file)
   if (value === undefined) {
-    stderr.write(`prismbinder: ${file} could not be read
-`)
-    for (const d of diagnostics)
-      stderr.write(`  ${d.severity} ${d.code} ${d.message}
-`)
+    stderr.write(`prismbinder: ${file} could not be read\n`)
+    for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.message}\n`)
     return EXIT_DIAGNOSTICS
   }
 
@@ -338,17 +343,12 @@ function cmdExport(file: string, outDir: string, format: ExportFormat): number {
   const tables = exportTables(value, format)
   for (const t of tables) writeFileSync(join(root, t.filename), t.content, 'utf8')
 
-  stdout.write(`wrote ${tables.length} table(s) to ${root}
-`)
-  for (const note of value.notes)
-    stdout.write(`  note: ${note}
-`)
+  stdout.write(`wrote ${tables.length} table(s) to ${root}\n`)
+  for (const note of value.notes) stdout.write(`  note: ${note}\n`)
   // The document parsed well enough to export, which is not the same as having
   // parsed cleanly. Staying silent here turns a questionable export into an
   // apparently successful one.
-  for (const d of diagnostics)
-    stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}
-`)
+  for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}\n`)
   return diagnostics.some((d) => d.severity === 'error') ? EXIT_DIAGNOSTICS : EXIT_OK
 }
 
