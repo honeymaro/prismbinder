@@ -24,10 +24,15 @@ import {
  * `extractVersion` of 45 on the `data/tables/` subtree that does *not* carry a
  * ZIP64 extra field, and this reproduces them exactly.
  *
- * What is still unverified is whether Prism opens the result. The corpus told
- * us what a Prism-written file looks like; it cannot tell us which parts Prism
- * requires. Until a generated file has been opened in Prism, treat this as
- * provisional and prefer `rewrite` on an existing document.
+ * Prism opens the result. A bundle written by this function, from nothing,
+ * loads in Prism 11.0.2 with its sheet title, column titles and cell values
+ * intact - which is the one thing no local test could establish, because a
+ * file Prism wrote shows what it writes, never what it requires.
+ *
+ * Confirmed for the shape that check used: one data sheet of `y_single`
+ * columns, no row titles and no X column. Row titles, an X column and multiple
+ * sheets are written the same way and read back correctly here, but have not
+ * themselves been opened in Prism.
  */
 
 export interface CreateColumn {

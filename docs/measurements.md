@@ -168,7 +168,7 @@ Editing a cell is not a local operation: the value lives in `data.csv`, but `con
 
 ---
 
-## M6 - synthesis (2026-08-07) written, unconfirmed
+## M6 - synthesis (2026-08-07, confirmed in Prism 2026-08-11)
 
 `createBundle()` builds a bundle with no original to copy from. Every field is taken from the documented format rather than invented, and the result is checked by test:
 
@@ -188,7 +188,13 @@ Field choices that needed a justification rather than a guess:
 - `minPrismVersion` defaults to **10.1.0**, the oldest floor seen in a real document, to maximise what can open the result.
 - Entry order reproduces what Prism writes (`data/` -> `data/sets/` -> `data/sheets/` -> `document.json` -> `data/tables/`). Nothing proves the order matters; nothing proves it doesn't.
 
-**The gap this cannot close.** Byte-fidelity tests need an original, and a synthesised file has none. Reading our own output back proves internal consistency and nothing about Prism's acceptance criteria - the corpus shows what Prism *writes*, never which entries it *requires*. Only opening a generated file in Prism settles it. That is the single remaining question in the project that no amount of local testing can answer.
+**The gap local testing could not close, and how it closed.** Byte-fidelity tests need an original, and a synthesised file has none. Reading our own output back proves internal consistency and nothing about Prism's acceptance criteria - the corpus shows what Prism *writes*, never which entries it *requires*.
+
+On 2026-08-11 a bundle written by `createBundle` from a CSV, with no Prism involved at any point, was opened in Prism 11.0.2. It loaded without an error or a repair prompt, as a Column table titled `Dose response`, with the column titles `Dose`, `Control`, `Treated` and all twelve cell values correct.
+
+So the entry set is sufficient: `data/`, `data/sets/*.json`, `data/sheets/<uid>/sheet.json`, `document.json` and `data/tables/<uid>/{content.json,data.csv,data.dt}` are enough for Prism to accept a document. The count caches written as zero, the `1-6-0` format version and the ZIP metadata profile are all accepted as written.
+
+**What that check did not cover.** One sheet, `y_single` columns, no row titles, no X column, and it was not re-saved from Prism. Row titles, an X column and multiple sheets go through the same code and read back correctly here, but have not themselves been in front of Prism. Nothing suggests they are wrong; they are simply not evidence yet.
 
 ---
 
@@ -283,7 +289,7 @@ Two flaws in the method were found and fixed while running it: the DNS check ini
 | ID | Content | Status |
 |---|---|---|
 | ~~P0-observe~~ | First observation of `.prism` | **resolved by M3** without needing the GUI |
-| **P0-open** | Does a generated bundle open in Prism? | **the one blocking question** - M6 produced the file, ~30 s to answer |
+| ~~P0-open~~ | Does a generated bundle open in Prism? | **resolved 2026-08-11**. It does. See M6 |
 | P1 | E0-a/b/c plus 6 section-removal candidates | waiting |
 | P2 | Four before/after mutation pairs (makes T2 non-circular) | waiting |
 | P3 | Unobserved `dataFormat` values (`y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n`, `y_se`) | waiting |

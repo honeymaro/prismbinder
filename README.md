@@ -22,7 +22,7 @@ Nothing existed for JavaScript, nothing ran client-side, and nothing attempted l
 
 ## Status
 
-Reading, editing and converting both formats works and is verified byte-for-byte against real documents. Creating a file from scratch is implemented but not yet confirmed against Prism itself.
+Reading, editing and converting both formats works and is verified byte-for-byte against real documents. Files written from scratch open in Prism.
 
 | | | |
 |---|---|---|
@@ -33,7 +33,7 @@ Reading, editing and converting both formats works and is verified byte-for-byte
 | done | CLI | `inspect`, `validate`, `extract`, `export`, `verify`, `anonymize`, `new`, `convert`, `diff` |
 | done | Browser app | open, browse, edit, undo, plot, autosave, save a copy, all client-side |
 | done | `convert` between formats | data crosses over intact; everything dropped is enumerated |
-| open | `create()` from nothing | writes a well-formed bundle; whether Prism *opens* it is unconfirmed |
+| done | `create()` from nothing | a bundle built from a CSV opens in Prism with its titles and values intact |
 | never | Rendering graphs | out of scope, deliberately. See below |
 | never | Recomputing statistics | out of scope, deliberately |
 

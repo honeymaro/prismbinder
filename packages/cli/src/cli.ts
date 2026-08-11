@@ -43,7 +43,7 @@ Usage
   prismbinder export <file> <dir> [--json]
                                     write every data table out as CSV (or JSON)
   prismbinder anonymize <in> <out>        clear the saving user's account name
-  prismbinder new <out.prism> [csv...]    build a bundle from CSV files (provisional)
+  prismbinder new <out.prism> [csv...]    build a bundle from CSV files
   prismbinder convert <in> <out>          move the data to the other format (lossy)
   prismbinder diff <a> <b> [--cells]      what changed: entries, values, and cells
 
@@ -355,9 +355,10 @@ function cmdExport(file: string, outDir: string, format: ExportFormat): number {
 /**
  * Builds a bundle from one or more CSV files.
  *
- * Provisional. Every field comes from the documented format, but the corpus
- * could only tell us what a Prism-written file looks like - not which parts
- * Prism requires. Open the result in Prism before relying on it.
+ * Every field comes from the documented format, and a bundle built this way
+ * has been opened in Prism with its titles and values intact (M6). Layouts
+ * beyond a single sheet of plain columns are written the same way but have not
+ * been through that check.
  */
 function cmdNew(output: string, csvFiles: readonly string[]): number {
   if (csvFiles.length === 0) {
@@ -386,7 +387,6 @@ function cmdNew(output: string, csvFiles: readonly string[]): number {
   const errors = diagnostics.filter((d) => d.severity === 'error')
   const count = value?.archive.entries.length ?? 0
   stdout.write(`${output}: wrote ${tables.length} table(s), ${count} entries\n`)
-  stdout.write('  provisional: open it in Prism to confirm it is accepted\n')
   for (const d of errors) stderr.write(`  error ${d.code} ${d.message}\n`)
   return errors.length > 0 ? EXIT_DIAGNOSTICS : EXIT_OK
 }

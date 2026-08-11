@@ -16,10 +16,10 @@ import { corpusBundles } from './testing/corpus.node.js'
  * What this establishes: the writer handles the real distribution of table
  * shapes, and the create -> read path is information-preserving.
  *
- * What it cannot establish: whether Prism opens the result. Nothing local can.
- * A file Prism wrote tells us what Prism writes, never what it requires, so the
- * synthesised entry set stays unverified until someone opens one. See M6 in
- * docs/measurements.md.
+ * What it cannot establish, and no local test can: whether Prism opens the
+ * result. A file Prism wrote tells us what Prism writes, never what it
+ * requires. That was settled by hand instead - see M6 in
+ * docs/measurements.md - and this suite guards the shapes around it.
  *
  * Cell values are never printed. Some corpora are unpublished research data,
  * and a test failure is not a reason to spill it into a CI log; failures report
