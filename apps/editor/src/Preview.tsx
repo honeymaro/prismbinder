@@ -20,8 +20,16 @@ import { useMemo } from 'react'
  *
  * What it does not do: fitted curves, error bars derived from a model, log
  * axes chosen by Prism, or anything else that would require knowing what the
- * original graph decided. Offsets are drawn as error bars only where the
- * storage layout is one we have verified.
+ * original graph decided. Error bars are drawn only where the storage layout
+ * is one we have verified, and are read from `storage` rather than from the
+ * layout's name - `y_high_low` covers both a value with two offsets and a
+ * value with the absolute limits that bracket it, and drawing one as the other
+ * turns a bar of [70, 110] into [30, 210].
+ *
+ * A connecting line is drawn only when the table has a real X column. Most
+ * tables do not: in a column, grouped or multiple-variables table each row is
+ * a separate observation or case, and joining them in row order draws a trend
+ * that does not exist. Those get points and nothing else.
  */
 
 const W = 680
@@ -47,13 +55,17 @@ interface Point {
   readonly down: number | undefined
 }
 
-interface Series {
+export interface Series {
   readonly label: string
   readonly points: readonly Point[]
 }
 
 export function Preview({ table, title }: { table: TableView; title: string }) {
-  const { series, xLabel, usedRowIndex } = useMemo(() => build(table), [table])
+  const { series, xLabel, usedRowIndex, spread } = useMemo(() => build(table), [table])
+  // Joining points in row order asserts that the rows are a sequence. In a
+  // column, grouped or multiple-variables table they are separate observations
+  // and the assertion is false, so those get points and no line.
+  const connect = !usedRowIndex
 
   if (series.length === 0) {
     return (
@@ -145,7 +157,9 @@ export function Preview({ table, title }: { table: TableView; title: string }) {
           const color = SERIES_COLORS[i % SERIES_COLORS.length]
           return (
             <g key={s.label}>
-              <path className="preview__line" d={path(s.points) ?? undefined} stroke={color} />
+              {connect ? (
+                <path className="preview__line" d={path(s.points) ?? undefined} stroke={color} />
+              ) : null}
               {s.points.map((p, pi) =>
                 p.up === undefined && p.down === undefined ? null : (
                   <line
@@ -181,7 +195,20 @@ export function Preview({ table, title }: { table: TableView; title: string }) {
 
       {usedRowIndex ? (
         <p className="muted small">
-          This table has no X column, so the row number is used for the horizontal axis.
+          This table has no X column, so the row number is used for the horizontal axis. The points
+          are not joined: the rows are separate observations, not a sequence.
+        </p>
+      ) : null}
+      {spread === 'replicates' ? (
+        <p className="muted small">
+          Every replicate is drawn, so a row with subcolumns contributes several points at the same
+          horizontal position.
+        </p>
+      ) : null}
+      {spread === 'bounds' ? (
+        <p className="muted small">
+          The bars run between the limits the file stores, which for this layout are absolute values
+          rather than distances from the point.
         </p>
       ) : null}
     </div>
@@ -189,48 +216,79 @@ export function Preview({ table, title }: { table: TableView; title: string }) {
 }
 
 /**
+ * What the subcolumns after the first one hold, for plotting purposes.
+ *
+ * Keyed on `storage`, which is the field that knows. The layout's *name* does
+ * not: `y_high_low` is what both a two-offset layout and an absolute-limits
+ * layout are called once they reach the bundle vocabulary.
+ */
+export type Spread = 'replicates' | 'symmetric' | 'offsets' | 'bounds' | 'none'
+
+export function spreadOf(table: TableView): Spread {
+  // Repeated measurements, not a summary. Every subcolumn is a real datum.
+  if (table.dataFormat === 'y_replicates' || table.dataFormat === 'text_replicates') {
+    return 'replicates'
+  }
+  switch (table.storage) {
+    case 'offsets':
+      return 'offsets'
+    case 'bounds':
+      return 'bounds'
+    // `y_cv` and `y_cv_n` label the column %CV, but every dataset inside such
+    // a table declares its own format as `y_sd`: the stored number is an SD,
+    // and a symmetric bar is what it describes.
+    case 'derived':
+      return 'symmetric'
+    case 'direct':
+      return table.dataFormat === 'y_sd' ||
+        table.dataFormat === 'y_se' ||
+        table.dataFormat === 'y_sd_n' ||
+        table.dataFormat === 'y_se_n'
+        ? 'symmetric'
+        : 'none'
+    default:
+      return 'none'
+  }
+}
+
+/**
  * Turns a table into plottable series.
  *
  * The X column is used when the table has one; otherwise the row number, which
- * is what a column table means. Extra subcolumns become error bars only for the
- * three layouts whose meaning is verified - `y_sd`, `y_plus_minus` and
- * `y_high_low`, all of which store offsets rather than absolute bounds. For
- * anything else the extra subcolumns are ignored rather than guessed at.
+ * is all a column table offers. Replicates are plotted individually rather than
+ * summarised: showing only the first of three and saying nothing is the one
+ * option that misrepresents the data while looking complete.
  */
-function build(table: TableView): {
+export function build(table: TableView): {
   series: Series[]
   xLabel: string
   usedRowIndex: boolean
+  spread: Spread
 } {
   const xColumn = table.columns.find((c) => c.role === 'x')
   const yColumns = table.columns.filter((c) => c.role === 'y')
   const usedRowIndex = xColumn === undefined
-
-  const errorBars =
-    table.dataFormat === 'y_sd' ||
-    table.dataFormat === 'y_plus_minus' ||
-    table.dataFormat === 'y_high_low'
+  const spread = spreadOf(table)
 
   const series: Series[] = []
   for (const col of yColumns) {
     const values = col.subcolumns[0] ?? []
     const points: Point[] = []
     for (let r = 0; r < values.length; r++) {
-      const yv = num(values[r])
-      if (yv === undefined) continue
       const xv = usedRowIndex ? r + 1 : num(xColumn?.subcolumns[0]?.[r])
       if (xv === undefined) continue
 
-      let up: number | undefined
-      let down: number | undefined
-      if (errorBars) {
-        const a = num(col.subcolumns[1]?.[r])
-        const b = num(col.subcolumns[2]?.[r])
-        // y_sd is symmetric; the other two store independent up/down offsets.
-        up = a
-        down = table.dataFormat === 'y_sd' ? a : b
+      if (spread === 'replicates') {
+        for (const sub of col.subcolumns) {
+          const v = num(sub[r])
+          if (v !== undefined) points.push({ x: xv, y: v, up: undefined, down: undefined })
+        }
+        continue
       }
-      points.push({ x: xv, y: yv, up, down })
+
+      const yv = num(values[r])
+      if (yv === undefined) continue
+      points.push({ x: xv, y: yv, ...bar(spread, col.subcolumns, r, yv) })
     }
     if (points.length > 0) {
       points.sort((p, q) => p.x - q.x)
@@ -242,6 +300,34 @@ function build(table: TableView): {
     series,
     xLabel: usedRowIndex ? 'Row' : (xColumn?.title ?? 'X'),
     usedRowIndex,
+    spread,
+  }
+}
+
+/** Half-lengths above and below the point, whatever form the file stores. */
+function bar(
+  spread: Spread,
+  subcolumns: readonly (readonly string[])[],
+  row: number,
+  value: number,
+): { up: number | undefined; down: number | undefined } {
+  const a = num(subcolumns[1]?.[row])
+  const b = num(subcolumns[2]?.[row])
+  switch (spread) {
+    case 'symmetric':
+      // `*_n` layouts put the count in the third subcolumn; it is not a bound.
+      return { up: a, down: a }
+    case 'offsets':
+      return { up: a, down: b }
+    case 'bounds': {
+      // Absolute limits, upper then lower. Converted to half-lengths here, and
+      // dropped rather than mirrored if they do not actually bracket the value.
+      if (a === undefined || b === undefined) return { up: undefined, down: undefined }
+      if (a < value || b > value) return { up: undefined, down: undefined }
+      return { up: a - value, down: value - b }
+    }
+    default:
+      return { up: undefined, down: undefined }
   }
 }
 
