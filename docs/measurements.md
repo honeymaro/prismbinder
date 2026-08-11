@@ -134,7 +134,7 @@ The whole-stack figure is the meaningful one: ZIP headers, deflate parameters, J
 
 ### What each layer had to get right
 
-- **ZIP** - three distinct metadata profiles coexist in one archive (`createVersion=831`; `extractVersion` 20 or 45, the latter *without* a ZIP64 extra field; `flag` 0x0 on directories and 0x4 on files; two `externalAttrs` values). The reader captures all of them; the writer replays them rather than recomputing.
+- **ZIP** - several metadata profiles coexist in one archive (`createVersion=831`; `extractVersion` 20 or 45, the latter *without* a ZIP64 extra field; `flag` 0x0 on directories and 0x4 on files; `externalAttrs` varying with the writing machine). The reader captures all of them; the writer replays them rather than recomputing, which is why widening the corpus changed the counts without changing the result.
 - **JSON** - two layouts in one archive (881 entries use tabs with no trailing newline; 72 use four spaces with one, and those 72 are exactly `data/tables/*/content.json`). Scalars keep their source text, so `1676.0`, `-9223372036854775807` and `1.016526170331098e-07` survive. Member order is preserved, including numeric-looking keys in non-ascending order.
 
   Those two counts are recorded here rather than asserted in the test, which checks the invariant - *exactly these two layouts, no third* - instead. A count assertion fails the moment a valid new document joins the corpus, and a test that fails on correct input teaches you to edit the number rather than read the failure.
@@ -177,7 +177,7 @@ Editing a cell is not a local operation: the value lives in `data.csv`, but `con
 | Our reader accepts it with no error diagnostics | yes |
 | It round-trips byte-for-byte through `readBundle` -> `writeBundle` | yes |
 | Cells land in the F17 column order | yes |
-| ZIP metadata matches the three profiles exactly | yes (`cv=831`; dir `ev=20 flag=0 m=0 attr=41ff0000`; file `ev=20 flag=4 m=8 attr=81b60000`; `data/tables/*` the same but `ev=45`) |
+| ZIP metadata matches the profile Prism writes | yes (`cv=831`; dir `flag=0 m=0`; file `flag=4 m=8`; `data/tables/*` at `ev=45` with `0666`) |
 | Both JSON layouts land on the right paths | yes |
 | No account name is written | yes |
 
@@ -281,6 +281,25 @@ The project was called `pzkit`, then `OpenPrism`, and is now `prismbinder`. The 
 Two flaws in the method were found and fixed while running it: the DNS check initially queried only the apex, reporting `prismaccess` free while `www.prismaccess.com` served a company's site; and the npm scope endpoint silently rate-limited to HTTP 429, which a control name in each batch exposed as noise rather than data.
 
 `prismbinder` was the only high-ranking name with zero hits on all five signals. It also describes the format: a `.prism` file is sheets, datasets and analyses bound into one container.
+
+---
+
+## M11 - a wider corpus (2026-08-11)
+
+The corpus was every Prism document on one machine: fourteen shipped templates and eight real files, all written by the same kind of writer. Two published parsers keep MIT-licensed test fixtures, and adding 27 of them - 23 `.pzfx` and 3 `.prism` - broke four suites on the first run.
+
+| What broke | What it turned out to be |
+|---|---|
+| `convert` cell comparison | **A real defect.** `toBundle` kept only `x.subcolumns[0]`, so an X column carrying error values lost them. Every XY table with error bars had been converting wrong. |
+| `verify` on 24 of 27 files | **A real gap.** The command existed to prove byte fidelity and only understood ZIP bundles, so the XML half of the project - where fidelity is the harder problem - could not be checked from the command line at all. |
+| ZIP metadata profile | **A documented fact was wrong.** "Exactly three profiles" held only because every archive came from one kind of machine. Permissions vary with the writer's umask, and `extractVersion 45` is not a property of the `data/tables/` path: nine archives carry both 20 and 45 inside it. What survives is that `ev` is 20 or 45 and that `45` always travels with `0666`. |
+| bundle reader over the corpus | **A test assumption.** One fixture is a ZIP holding a single empty directory. Refusing it is correct; the suite counted the refusal as a failure. |
+
+The new fixtures also cover five subcolumn layouts the original corpus never contained - `y_cv`, `y_cv_n`, `y_sd_n`, `y_se`, `y_se_n` - plus a `HugeTable`, comma decimals and a date axis. All 24 `.pzfx` documents round-trip byte-for-byte.
+
+Nothing is committed: `tools/fetch-external-fixtures.mjs` downloads them from pinned commits, and `fixtures/external/README.md` records why each source was chosen.
+
+**The general point.** Every one of these four passed against the original corpus, for months, at 297 green tests. A suite is only as honest as the inputs it has been shown, and a corpus drawn entirely from one machine will agree with itself.
 
 ---
 

@@ -37,7 +37,9 @@ Prism's archives are not uniform, and a writer has to reproduce the variation ra
 
 **`extractVersion = 45` does not mean ZIP64 here.** Those entries carry no ZIP64 extra field. A library that infers ZIP64 from the version stamp will add one and change the bytes.
 
-The `data/tables/` subtree is written by a different code path from the rest of the archive: it is the only subtree with `extractVersion 45`, and also the only one whose JSON uses a different layout (section 4). Expect a third writer to appear eventually.
+The `data/tables/` subtree is written by a different code path from the rest of the archive. Its JSON uses a different layout (section 4), and its entries carry `extractVersion 45` paired with Unix permissions `0666`; the rest of the archive carries `extractVersion 20`, with permissions that vary by writing machine.
+
+Do not turn that into a rule about paths. A corpus of fourteen shipped templates suggested `data/tables/` was exactly the `ev=45` subtree; nine further documents have both versions inside it. What holds across everything examined is narrower: `extractVersion` is 20 or 45 and nothing else, `45` always appears together with `0666`, and `content.json` has been `45` in all 126 tables seen. The permission bits outside that subtree vary with the machine that wrote the file - 0644 on some, 0666 on others - so a reader must carry them per entry rather than derive them.
 
 Directory entries are present and stored. Central-directory order matches physical order in every archive examined, and the top-level section order varies between documents, so neither should be assumed.
 
