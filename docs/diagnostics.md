@@ -115,6 +115,7 @@ A ZIP states an entry's inflated size, and nothing makes that statement true. Th
 |---|---|---|
 | `convert/no-data` | error | The document has no data tables, so there is nothing a conversion could carry across. |
 | `convert/unverified-layout` | warning | This table's subcolumn layout has never been observed, so its columns are copied as stored without interpreting what they mean. |
+| `convert/duplicate-column-title` | warning | Flattening subcolumns generated a column title that another column already used. No data is lost; the names simply stop identifying a column, and the source document did not have that ambiguity. |
 
 Conversion also returns a **loss list** alongside its diagnostics. It is not a diagnostic channel: a loss is expected and unavoidable, not a defect, and it is reported on every successful conversion rather than only on suspect ones. Graphs and analyses always appear there when present, because in both formats they live inside a legacy binary we decline to author.
 

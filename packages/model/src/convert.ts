@@ -90,6 +90,17 @@ export function toBundle(project: Project): ConversionResult {
   const { losses, diagnostics } = tally(project)
   const tables = dataTables(project).map(({ title, table }) => {
     const x = table.columns.find((c) => c.role === 'x')
+
+    // An X column can carry more than one subcolumn - `.pzfx` writes X with
+    // error bars that way. The bundle format has room for exactly one X, so
+    // the first subcolumn stays X and the rest follow it as ordinary columns.
+    // Keeping only subcolumn 0, which is what this did, silently dropped the
+    // error values of every XY table that had them.
+    const xExtras = (x?.subcolumns ?? []).slice(1).map((cells, i) => ({
+      title: `${x?.title ?? 'X'} (${i + 2})`,
+      cells,
+    }))
+
     return {
       title,
       ...(table.rowTitles.length > 0 ? { rowTitles: table.rowTitles } : {}),
@@ -101,16 +112,38 @@ export function toBundle(project: Project): ConversionResult {
         : { xColumn: { title: x.title, cells: x.subcolumns[0] } }),
       // The bundle writer emits single-value Y columns, so each subcolumn
       // becomes its own column. The values are preserved; the grouping is not.
-      columns: table.columns
-        .filter((c) => c.role === 'y')
-        .flatMap((c) =>
-          c.subcolumns.map((cells, i) => ({
-            title: i === 0 ? c.title : `${c.title} (${i + 1})`,
-            cells,
-          })),
-        ),
+      columns: [
+        ...xExtras,
+        ...table.columns
+          .filter((c) => c.role === 'y')
+          .flatMap((c) =>
+            c.subcolumns.map((cells, i) => ({
+              title: i === 0 ? c.title : `${c.title} (${i + 1})`,
+              cells,
+            })),
+          ),
+      ],
     }
   })
+
+  // Flattening invents column names, and an invented one can land on a title
+  // the document already used: an X column `Conc` with error subcolumns
+  // produces `Conc (2)`, which collides with a Y column genuinely titled
+  // `Conc (2)`. No data is lost - each keeps its own dataset - but the result
+  // holds an ambiguity the source did not, and a tool that promises to name
+  // what it changed should not introduce one quietly.
+  for (const t of tables) {
+    const names = t.columns.map((c) => c.title)
+    const duplicated = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))]
+    if (duplicated.length > 0) {
+      diagnostics.push({
+        code: 'convert/duplicate-column-title',
+        severity: 'warning',
+        path: t.title,
+        message: `flattening subcolumns produced repeated column titles (${duplicated.join(', ')}); the data is intact but the names no longer identify a column`,
+      })
+    }
+  }
 
   if (tables.length === 0) {
     return { bytes: undefined, losses, diagnostics: [...diagnostics, noTables()] }
