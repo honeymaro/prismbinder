@@ -1,4 +1,5 @@
 import { encodeUtf8 } from '@prismbinder/core'
+import type { PzfxYFormat } from './grammar.js'
 
 /**
  * Building a `.pzfx` from nothing.
@@ -35,6 +36,14 @@ export interface PzfxCreateTable {
   readonly rowTitles?: readonly string[]
   /** `Replicates` on the table element; defaults to the widest Y column. */
   readonly replicates?: number
+  /**
+   * What the subcolumns mean.
+   *
+   * Omit only when they are repeated measurements or there is a single one.
+   * Anything else - a mean with an SD, a value with error bounds - must say so
+   * here: the default is `replicates`, and Prism averages replicates.
+   */
+  readonly yFormat?: PzfxYFormat
 }
 
 export interface PzfxCreateOptions {
@@ -82,14 +91,27 @@ export function createPzfx(opts: PzfxCreateOptions): Uint8Array {
   opts.tables.forEach((t, i) => {
     const widest = Math.max(1, ...t.yColumns.map((c) => c.subcolumns.length))
     const replicates = t.replicates ?? widest
-    // XFormat/YFormat name what the subcolumns mean. Only layouts whose meaning
-    // is verified are emitted; anything wider falls back to replicates, which
-    // is the one wide layout that needs no interpretation.
-    const yFormat = replicates === 1 ? 'none' : 'replicates'
+    const xSubcolumns = t.xColumn?.subcolumns.length ?? 0
 
-    out.push(
-      `<Table ID="Table${i}" XFormat="${t.xColumn === undefined ? 'none' : 'number'}" YFormat="${yFormat}" Replicates="${replicates}" TableType="XY" EVFormat="AsteriskAfterNumber">`,
-    )
+    // Every attribute below is a value from GraphPad's own schema. Three of
+    // these used to be spellings that appear in no real document and in no
+    // enumeration - `XFormat="number"`, `YFormat="none"`, and `TableType="XY"`
+    // on a table with no X column at all - which our reader accepted and a
+    // stricter one need not.
+    //
+    const tableType = tableTypeFor(xSubcolumns > 0, widest)
+    const yFormat = yFormatFor(t.yFormat, tableType)
+
+    const attrs = [`ID="Table${i}"`]
+    attrs.push(`XFormat="${xFormatFor(xSubcolumns)}"`)
+    if (yFormat !== undefined) attrs.push(`YFormat="${yFormat}"`)
+    attrs.push(`TableType="${tableType}"`)
+    // `Replicates` is the count that `YFormat="replicates"` refers to, and the
+    // corpus writes it only alongside that layout.
+    if (yFormat === 'replicates') attrs.push(`Replicates="${replicates}"`)
+    attrs.push('EVFormat="AsteriskAfterNumber"')
+
+    out.push(`<Table ${attrs.join(' ')}>`)
     out.push(`<Title>${text(t.title)}</Title>`)
 
     if (t.rowTitles !== undefined) {
@@ -99,7 +121,9 @@ export function createPzfx(opts: PzfxCreateOptions): Uint8Array {
     }
 
     if (t.xColumn !== undefined) {
-      out.push('<XColumn Width="89" Decimals="6" Subcolumns="1">')
+      // Declared width has to match what follows it. An X column carrying error
+      // subcolumns was previously announced as one column wide regardless.
+      out.push(`<XColumn Width="89" Decimals="6" Subcolumns="${xSubcolumns}">`)
       out.push(`<Title>${text(t.xColumn.title)}</Title>`)
       for (const s of t.xColumn.subcolumns) out.push(subcolumn(s))
       out.push('</XColumn>')
@@ -117,6 +141,48 @@ export function createPzfx(opts: PzfxCreateOptions): Uint8Array {
 
   out.push('</GraphPadPrismFile>')
   return encodeUtf8(out.join(EOL) + EOL)
+}
+
+/**
+ * `numbers` for a plain X, `error` when the X carries error subcolumns.
+ *
+ * Both are schema members; the singular `number` is not, and appears in none of
+ * the 137 pzfx-family documents examined. `error` is how the corpus spells an X
+ * wider than one subcolumn.
+ */
+function xFormatFor(xSubcolumns: number): string {
+  if (xSubcolumns === 0) return 'none'
+  return xSubcolumns > 1 ? 'error' : 'numbers'
+}
+
+/**
+ * Whether to write `YFormat`, and what.
+ *
+ * Not a function of column width, which is what it looked like at first: of the
+ * 137 pzfx-family documents examined, **no `XY` table omits the attribute**,
+ * including all 36 whose columns have a single subcolumn - those write
+ * `YFormat="replicates" Replicates="1"`. What actually omits it is the table
+ * kind: `OneWay` never carries one (41 of 41), nor do `Survival` or
+ * `Contingency`. So an earlier version of this fix traded a value outside the
+ * enumeration for a combination outside the corpus.
+ */
+function yFormatFor(explicit: PzfxYFormat | undefined, tableType: string): string | undefined {
+  if (explicit !== undefined) return explicit
+  if (tableType === 'OneWay') return undefined
+  return 'replicates'
+}
+
+/**
+ * The table kind, chosen to be consistent with the columns actually written.
+ *
+ * In the corpus an `XY` table always has an X column, a `OneWay` table always
+ * has exactly one subcolumn per column and never carries `YFormat`, and the
+ * side-by-side layout without an X is `TwoWay`. Declaring `XY` for all three
+ * described a table that was not being written.
+ */
+function tableTypeFor(hasX: boolean, widest: number): string {
+  if (hasX) return 'XY'
+  return widest > 1 ? 'TwoWay' : 'OneWay'
 }
 
 function subcolumn(cells: readonly string[]): string {
