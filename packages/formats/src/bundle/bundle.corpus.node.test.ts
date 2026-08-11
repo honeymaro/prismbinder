@@ -13,7 +13,12 @@ describe.skipIf(files.length === 0)(`bundle reader over ${files.length} archives
     for (const f of files) {
       const { value, diagnostics } = readBundle(f.bytes)
       if (value === undefined) {
-        failures.push(`${f.name}: no bundle`)
+        // Not every ZIP on a machine is a Prism document. A corpus wide enough
+        // to be useful includes archives that are not bundles at all, and
+        // refusing one with a clear diagnostic is the correct behaviour, not a
+        // failure - so what is asserted is the diagnostic, not the parse.
+        const why = diagnostics.map((d) => d.code)
+        expect(why, `${f.name} was refused without saying why`).toContain('bundle/no-document')
         continue
       }
       const errors = diagnostics.filter((d) => d.severity === 'error')

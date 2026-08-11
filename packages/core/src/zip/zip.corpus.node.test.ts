@@ -54,12 +54,45 @@ describe.skipIf(bundles.length === 0)(`T1 byte fidelity over ${describeCorpus()}
         )
       }
     }
-    // Exactly three shapes exist across every archive we have seen.
-    expect([...combos].sort()).toEqual([
-      'dir cv=831 ev=20 flag=0 m=0 attr=41ff0000',
-      'file cv=831 ev=20 flag=4 m=8 attr=81b60000',
-      'file cv=831 ev=45 flag=4 m=8 attr=81b60000',
-    ])
+    // The invariant, not a fixed list. Documents written on different machines
+    // carry different Unix permission bits outside `data/tables/` - the same
+    // corpus that first showed this also showed 0644 where ours all had 0666 -
+    // so the constant part is what the writer actually controls.
+    for (const combo of combos) {
+      expect(combo, 'created by Prism, spec 6.3, Unix host').toContain('cv=831')
+      if (combo.startsWith('dir')) {
+        expect(combo).toContain('flag=0 m=0')
+      } else {
+        expect(combo, 'files are deflated and declare fast compression').toContain('flag=4 m=8')
+      }
+    }
+  })
+
+  it('uses one of two extract versions, and pairs 45 with the wider permissions', () => {
+    // The narrow corpus suggested a tidy rule - `data/tables` is the ev=45
+    // subtree - and a wider one disproved it: in nine archives that subtree
+    // holds both versions. What survives is weaker and actually true. `ev=45`
+    // and the 0666 bits always travel together, which is the real signal that
+    // one code path wrote those entries; where the boundary falls is not ours
+    // to predict, and the writer reproduces it per entry rather than deriving
+    // it.
+    let seen45 = 0
+    for (const b of bundles) {
+      for (const e of readZip(b.bytes).value.entries) {
+        if (e.isDirectory) continue
+        expect([20, 45], `${b.name}::${e.name}`).toContain(e.meta.extractVersion)
+        if (e.meta.extractVersion === 45) {
+          expect(e.meta.externalAttrs.toString(16), `${b.name}::${e.name}`).toBe('81b60000')
+          seen45++
+        }
+      }
+    }
+    // Not a population count. An earlier version demanded more than a hundred,
+    // which quietly required a local Prism installation: with only the external
+    // fixtures the number is 49, so the check failed on precisely the setup
+    // `tools/fetch-external-fixtures.mjs` exists to enable. All this needs to
+    // do is stop the pairing assertion above from passing vacuously.
+    expect(seen45).toBeGreaterThan(0)
   })
 
   it("reproduces every deflate stream with Prism's parameters (T1')", () => {

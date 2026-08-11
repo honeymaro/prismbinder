@@ -60,7 +60,33 @@ function listFiles(dir: string): string[] {
 }
 
 /**
- * Every ZIP-container document we can find.
+ * A ZIP is not necessarily a Prism document.
+ *
+ * Being a ZIP is what the magic bytes tell you; being a *bundle* additionally
+ * requires a `document.json`. Widening the corpus turned up an archive holding
+ * one empty directory and nothing else, and every suite that assumed otherwise
+ * failed on it - correctly refusing to parse it, then being marked wrong for
+ * having refused.
+ *
+ * The whole buffer, not a tail window. A first attempt scanned the last 64 KB,
+ * on the theory that the central directory lives at the end. 64 KB bounds the
+ * *end-of-central-directory record*, not the directory itself, and
+ * `document.json` is written before the `data/tables` block, so its record sits
+ * near the directory's start. Two hundred tables was enough to push it out of
+ * the window, and the document was then dropped from the corpus in silence -
+ * the one failure mode a test helper must not have.
+ *
+ * Deliberately not `readZip`: a helper that picks the corpus by running the
+ * reader under test would shrink that corpus exactly when the reader breaks.
+ * A false positive here costs nothing, because the suites then report a real
+ * diagnostic; a false negative costs coverage that nobody can see is missing.
+ */
+function looksLikeBundle(bytes: Uint8Array): boolean {
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes('document.json')
+}
+
+/**
+ * Every Prism bundle we can find.
  *
  * Dispatch is on magic bytes rather than extension, because `.pzt` is three
  * different formats depending on the file: XML, PCFF binary, or a ZIP bundle.
@@ -75,10 +101,12 @@ export function corpusBundles(): CorpusFile[] {
       } catch {
         continue
       }
+      // Cheapest, most certain test first: this walks every file in the sample
+      // directories, most of which are not archives at all.
       if (bytes.length < 4) continue
-      if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
-        out.push({ name: path.split(/[\\/]/).pop() ?? path, path, bytes })
-      }
+      if (bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) continue
+      if (!looksLikeBundle(bytes)) continue
+      out.push({ name: path.split(/[\\/]/).pop() ?? path, path, bytes })
     }
   }
   return out
