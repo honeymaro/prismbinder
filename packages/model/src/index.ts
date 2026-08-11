@@ -7,9 +7,12 @@ export {
   type DataSheetView,
   type GraphSheetView,
   type InfoSheetView,
+  marksFor,
+  NO_MARKS,
   numericCell,
   type Project,
   type Sheet,
   type SourceFormat,
+  type SubcolumnMarks,
   type TableView,
 } from './types.js'

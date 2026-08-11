@@ -90,12 +90,40 @@ export interface TableView {
   readonly storage: StorageSemantics
 }
 
+/**
+ * Rows Prism marks inside one subcolumn.
+ *
+ * `excluded` is the one that changes an answer. Prism keeps such a value on the
+ * table so the reading stays on the record, but leaves it out of every analysis
+ * and every graph - so anything that reads these cells as ordinary data reports
+ * numbers Prism itself does not use. `censored` carries the same weight for
+ * survival tables, where it distinguishes "the subject died at t" from "we
+ * stopped following the subject at t".
+ */
+export interface SubcolumnMarks {
+  readonly excluded: ReadonlySet<number>
+  readonly censored: ReadonlySet<number>
+}
+
 export interface ColumnView {
   readonly id: string
   readonly title: string
   readonly role: 'x' | 'y' | 'rowTitles'
   /** One entry per subcolumn; each is a column of raw cell text. */
   readonly subcolumns: readonly (readonly string[])[]
+  /** Parallel to `subcolumns`. Empty sets when nothing is marked. */
+  readonly marks: readonly SubcolumnMarks[]
+  /**
+   * True when the values were computed from a start value and an interval
+   * rather than read from the file. Prism shows them; the table stores none.
+   */
+  readonly generated: boolean
+}
+
+export const NO_MARKS: SubcolumnMarks = { excluded: new Set(), censored: new Set() }
+
+export function marksFor(column: ColumnView, subcolumn: number): SubcolumnMarks {
+  return column.marks[subcolumn] ?? NO_MARKS
 }
 
 /** Reads a cell, tolerating ragged columns. */
