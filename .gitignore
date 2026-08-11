@@ -54,6 +54,11 @@ tools/legacy-analysis/measurements/jsoncp.mjs
 tools/legacy-analysis/measurements/pxml.mjs
 tools/legacy-analysis/measurements/zipjs.mjs
 
+# Fixtures borrowed from other open-source projects. Not ours to redistribute,
+# and one command away: node tools/fetch-external-fixtures.mjs
+fixtures/external/*
+!fixtures/external/README.md
+
 # P1 experiment files (mutations of shipped bundles -> derivative works)
 tools/prism-experiments/out/
 
