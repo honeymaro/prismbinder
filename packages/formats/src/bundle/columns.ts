@@ -99,13 +99,24 @@ export function columnLayout(
  *
  * Measured, in the corpus: `y_high_low` stores two independent offsets rather
  * than absolute bounds, and `y_plus_minus` likewise stores an up and a down
- * offset that are not equal to one another. `y_sd` stores the SD directly.
+ * offset that are not equal to one another. `y_sd`, `y_se` and the `*_n`
+ * variants store what their name says.
  *
- * The `*_cv` and `*_n` variants do not appear in any file we have, so we do not
- * claim to know what they hold. Callers get `unknown` and can decide whether to
- * refuse the table rather than display a number that might be wrong.
+ * `y_cv` and `y_cv_n` are the interesting case. Prism labels the column %CV,
+ * but every dataset inside such a table declares its own `format` as `y_sd`
+ * and `y_sd_n` respectively - so the number on disk is a standard deviation
+ * and the percentage is computed for display. A reader that took the stored
+ * value at face value under a %CV heading would be off by a factor of the
+ * mean. That is `derived`, and it is why the two axes exist: the table says
+ * how to show a column, the dataset says what is in it.
  */
-export type StorageSemantics = 'direct' | 'offsets' | 'unknown'
+/**
+ * `bounds` is never returned from a bundle: that vocabulary has one name,
+ * `y_high_low`, for both the offset layout and the absolute-limits layout that
+ * `.pzfx` spells `upper-lower-limits`. The XML side can tell them apart and
+ * says so rather than rounding down to the coarser answer.
+ */
+export type StorageSemantics = 'direct' | 'offsets' | 'bounds' | 'derived' | 'unknown'
 
 export function storageSemantics(dataFormat: string): StorageSemantics {
   switch (dataFormat) {
@@ -114,10 +125,16 @@ export function storageSemantics(dataFormat: string): StorageSemantics {
     case 'text_replicates':
     case 'y_replicates':
     case 'y_sd':
+    case 'y_se':
+    case 'y_sd_n':
+    case 'y_se_n':
       return 'direct'
     case 'y_plus_minus':
     case 'y_high_low':
       return 'offsets'
+    case 'y_cv':
+    case 'y_cv_n':
+      return 'derived'
     default:
       return 'unknown'
   }

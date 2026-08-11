@@ -65,11 +65,42 @@ export interface BundleDocument {
   readonly sheetTitles: ReadonlyMap<string, string>
 }
 
+/**
+ * An X column Prism generates instead of storing.
+ *
+ * Such a dataset occupies no CSV column at all; the values come from these two
+ * numbers. The rule is arithmetic - `x[i] = startValue + i * interval` - which
+ * three documents agree on: two of them land on exactly 1000.0 and 72.0 at the
+ * thousandth row, where a geometric reading gives 0.2459 and 1.0.
+ */
+export interface DataSetSeries {
+  readonly startValue: number
+  readonly interval: number
+}
+
+/**
+ * Rows Prism marks within one subcolumn.
+ *
+ * Stored as inclusive ranges: `"34"` for a single row, `"0~1"` for a span.
+ * `EXCLUDED` is the important one - such a value stays visible in the table but
+ * is left out of every analysis and every graph, so a reader that ignores the
+ * flag reports data Prism does not use.
+ */
+export interface CellFlagRange {
+  readonly firstRow: number
+  readonly lastRow: number
+  readonly attributes: readonly string[]
+}
+
 /** A column of values. Prism keeps derived statistics here, some of which go stale. */
 export interface DataSet {
   readonly uid: string
   readonly title: string | undefined
   readonly format: DataFormat | string
+  /** Present only when `format` is `series`; the values are then generated. */
+  readonly series: DataSetSeries | undefined
+  /** One entry per replicate (subcolumn), in order. Usually empty. */
+  readonly cellFlags: readonly (readonly CellFlagRange[])[]
   readonly json: JsonDocument
 }
 

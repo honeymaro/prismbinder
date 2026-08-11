@@ -6,6 +6,7 @@ import {
   decodeUtf8,
   getMember,
   type JsonDocument,
+  type JsonNode,
   type ParseResult,
   parseCsv,
   parseJson,
@@ -20,7 +21,9 @@ import type {
   AnalysisSheet,
   BundleDocument,
   BundleIdentity,
+  CellFlagRange,
   DataSet,
+  DataSetSeries,
   DataSheet,
   DataTable,
   GraphSheet,
@@ -137,6 +140,93 @@ function readDocument(ctx: Ctx): BundleDocument | undefined {
   }
 }
 
+/**
+ * `"34"` is one row; `"0~1"` is rows 0 through 1, inclusive at both ends.
+ *
+ * Matched rather than coerced. `Number("")` is `0`, not `NaN`, so handing the
+ * conversion an empty segment turns a truncated `rows` field into a confident
+ * claim about row 0 - `""`, `"~5"` and `"0~"` all used to parse. The corpus
+ * writes plain non-negative decimals and nothing else, so that is the whole
+ * grammar.
+ */
+const ROW_RANGE = /^(\d+)(?:~(\d+))?$/
+
+function parseRowRange(text: string | undefined): readonly [number, number] | undefined {
+  if (text === undefined) return undefined
+  const m = ROW_RANGE.exec(text)
+  if (m === null) return undefined
+  const first = Number(m[1])
+  const last = m[2] === undefined ? first : Number(m[2])
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) return undefined
+  if (last < first) return undefined
+  return [first, last]
+}
+
+function readCellFlags(ctx: Ctx, name: string, node: JsonNode | undefined): CellFlagRange[] {
+  if (node?.kind !== 'array') return []
+  const out: CellFlagRange[] = []
+  let unreadable = 0
+  for (const item of node.items) {
+    if (item.kind !== 'object') continue
+    const attributes = stringArray(getMember(item, 'attributes'))
+    if (attributes.length === 0) continue
+    const span = parseRowRange(asString(getMember(item, 'rows')))
+    if (span === undefined) {
+      unreadable++
+      continue
+    }
+    out.push({ firstRow: span[0], lastRow: span[1], attributes })
+  }
+  if (unreadable > 0) {
+    // Dropping one of these downgrades an excluded value to an ordinary one,
+    // which is the failure this whole path exists to prevent.
+    ctx.bag.warn(
+      'bundle/unreadable-cell-range',
+      name,
+      `${unreadable} cell attribute range(s) name rows in a form we do not recognise and were ignored`,
+    )
+  }
+  return out
+}
+
+/**
+ * Reads the parts of a dataset record that the CSV cannot express.
+ *
+ * Two of them. A `SeriesReplicate` describes an X column Prism generates and
+ * never writes, and `cellAttributes` marks individual rows as excluded or
+ * censored. Both are invisible in the data the table stores, and both change
+ * what the numbers mean.
+ */
+function readReplicates(
+  ctx: Ctx,
+  name: string,
+  doc: JsonDocument,
+): {
+  series: DataSetSeries | undefined
+  cellFlags: (readonly CellFlagRange[])[]
+} {
+  const node = getMember(doc.root, 'replicates')
+  if (node?.kind !== 'array') return { series: undefined, cellFlags: [] }
+
+  let series: DataSetSeries | undefined
+  const cellFlags: (readonly CellFlagRange[])[] = []
+
+  for (const rep of node.items) {
+    if (rep.kind !== 'object') {
+      cellFlags.push([])
+      continue
+    }
+    if (series === undefined && asString(getMember(rep, '@class')) === 'SeriesReplicate') {
+      const startValue = asNumber(getMember(rep, 'startValue'))
+      const interval = asNumber(getMember(rep, 'interval'))
+      if (startValue !== undefined && interval !== undefined) series = { startValue, interval }
+    }
+    cellFlags.push(readCellFlags(ctx, name, getMember(rep, 'cellAttributes')))
+  }
+
+  return { series, cellFlags }
+}
+
 function readTable(ctx: Ctx, sheetJson: JsonDocument, sheetName: string): DataTable | undefined {
   const tableNode = getMember(sheetJson.root, 'table')
   if (tableNode?.kind !== 'object') return undefined
@@ -225,10 +315,23 @@ export function readBundle(
       const doc = json(ctx, name)
       if (doc === undefined) continue
       const uid = asString(getMember(doc.root, 'uid')) ?? (m[1] as string)
+      const format = asString(getMember(doc.root, 'format')) ?? 'y_single'
+      const { series, cellFlags } = readReplicates(ctx, name, doc)
+      if (format === 'series' && series === undefined) {
+        // The dataset claims to occupy no column *and* withholds the numbers
+        // needed to rebuild one, which leaves the X values unrecoverable.
+        bag.warn(
+          'bundle/series-without-parameters',
+          name,
+          'dataset is a generated series but records no startValue and interval, so its values cannot be rebuilt',
+        )
+      }
       dataSets.set(uid, {
         uid,
         title: asString(getMember(doc.root, 'title')),
-        format: asString(getMember(doc.root, 'format')) ?? 'y_single',
+        format,
+        series,
+        cellFlags,
         json: doc,
       })
       continue
