@@ -1,5 +1,5 @@
 import { printCsv } from '@prismbinder/core'
-import type { Project, Sheet } from '@prismbinder/model'
+import { marksFor, type Project, type Sheet } from '@prismbinder/model'
 
 /**
  * Getting the data out.
@@ -15,9 +15,44 @@ import type { Project, Sheet } from '@prismbinder/model'
 
 export type ExportFormat = 'csv' | 'json'
 
+/**
+ * What to do with a value Prism excludes.
+ *
+ * Prism's own export dialog asks the same question and offers the same three
+ * answers, because there is no standard way to say "excluded" in a CSV. An
+ * excluded value is left out of every analysis and every graph, so emitting it
+ * as an ordinary number hands the reader data Prism does not use.
+ *
+ * `value` is the default only because it is what this command already did;
+ * changing it silently would alter existing output. The count is reported
+ * either way, which is the part that was missing.
+ */
+export type ExcludedPolicy = 'value' | 'asterisk' | 'blank'
+
+export const EXCLUDED_POLICIES: readonly ExcludedPolicy[] = ['value', 'asterisk', 'blank']
+
 export interface ExportedTable {
   readonly filename: string
   readonly content: string
+}
+
+function applyPolicy(text: string, excluded: boolean, policy: ExcludedPolicy): string {
+  if (!excluded || text === '') return text
+  if (policy === 'blank') return ''
+  if (policy === 'asterisk') return `${text}*`
+  return text
+}
+
+/** How many cells in a project are marked excluded. */
+export function countExcluded(project: Project): number {
+  let n = 0
+  for (const sheet of project.sheets) {
+    if (sheet.kind !== 'data') continue
+    for (const c of sheet.table.columns) {
+      for (let i = 0; i < c.subcolumns.length; i++) n += marksFor(c, i).excluded.size
+    }
+  }
+  return n
 }
 
 function slug(s: string, fallback: string): string {
@@ -29,7 +64,7 @@ function slug(s: string, fallback: string): string {
 }
 
 /** Flattens a sheet into a grid: one column per subcolumn, with header rows. */
-function gridFor(sheet: Extract<Sheet, { kind: 'data' }>): string[][] {
+function gridFor(sheet: Extract<Sheet, { kind: 'data' }>, policy: ExcludedPolicy): string[][] {
   const t = sheet.table
   const headers: string[] = []
   const subheaders: string[] = []
@@ -42,7 +77,12 @@ function gridFor(sheet: Extract<Sheet, { kind: 'data' }>): string[][] {
       const sub = c.subcolumns.length > 1 ? `${i + 1}` : ''
       if (sub !== '') anySubheader = true
       subheaders.push(sub)
-      columns.push(cells)
+      const excluded = marksFor(c, i).excluded
+      columns.push(
+        excluded.size === 0
+          ? cells
+          : cells.map((text, row) => applyPolicy(text, excluded.has(row), policy)),
+      )
     })
   }
 
@@ -54,7 +94,11 @@ function gridFor(sheet: Extract<Sheet, { kind: 'data' }>): string[][] {
   return rows
 }
 
-export function exportTables(project: Project, format: ExportFormat): ExportedTable[] {
+export function exportTables(
+  project: Project,
+  format: ExportFormat,
+  policy: ExcludedPolicy = 'value',
+): ExportedTable[] {
   const out: ExportedTable[] = []
   const used = new Set<string>()
 
@@ -66,7 +110,7 @@ export function exportTables(project: Project, format: ExportFormat): ExportedTa
     used.add(name)
 
     if (format === 'csv') {
-      out.push({ filename: `${name}.csv`, content: printCsv({ rows: gridFor(sheet) }) })
+      out.push({ filename: `${name}.csv`, content: printCsv({ rows: gridFor(sheet, policy) }) })
     } else {
       out.push({
         filename: `${name}.json`,
@@ -81,7 +125,13 @@ export function exportTables(project: Project, format: ExportFormat): ExportedTa
             columns: sheet.table.columns.map((c) => ({
               title: c.title,
               role: c.role,
+              ...(c.generated ? { generated: true } : {}),
               subcolumns: c.subcolumns,
+              // Row indices Prism leaves out of its analyses and graphs. JSON
+              // can carry this where a CSV cell cannot, so it is reported here
+              // regardless of the policy.
+              excludedRows: c.subcolumns.map((_, i) => [...marksFor(c, i).excluded]),
+              censoredRows: c.subcolumns.map((_, i) => [...marksFor(c, i).censored]),
             })),
           },
           null,

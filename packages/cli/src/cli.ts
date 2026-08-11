@@ -22,7 +22,13 @@ import {
 } from '@prismbinder/formats'
 import { readProject, toBundle, toPzfx } from '@prismbinder/model'
 import { buildDiff, formatDiff } from './diff.js'
-import { type ExportFormat, exportTables } from './export.js'
+import {
+  countExcluded,
+  EXCLUDED_POLICIES,
+  type ExcludedPolicy,
+  type ExportFormat,
+  exportTables,
+} from './export.js'
 import { formatReport, inspectBytes } from './inspect.js'
 
 /**
@@ -42,7 +48,7 @@ Usage
   prismbinder validate <file> [--json]    report diagnostics; exit 1 if any are errors
   prismbinder extract <file> <dir>        write every entry to a directory
   prismbinder verify <file>               check that we can round-trip it byte-for-byte
-  prismbinder export <file> <dir> [--json]
+  prismbinder export <file> <dir> [--json] [--excluded value|asterisk|blank]
                                     write every data table out as CSV (or JSON)
   prismbinder anonymize <in> <out>        clear the saving user's account name
   prismbinder new <out.prism> [csv...]    build a bundle from CSV files
@@ -329,7 +335,12 @@ function cmdAnonymize(input: string, output: string): number {
 }
 
 /** Writes every data table to a directory. The commonest reason to reach for this tool. */
-function cmdExport(file: string, outDir: string, format: ExportFormat): number {
+function cmdExport(
+  file: string,
+  outDir: string,
+  format: ExportFormat,
+  policy: ExcludedPolicy,
+): number {
   const bytes = readInput(file)
   const { value, diagnostics } = readProject(bytes, file)
   if (value === undefined) {
@@ -340,10 +351,21 @@ function cmdExport(file: string, outDir: string, format: ExportFormat): number {
 
   const root = resolve(outDir)
   mkdirSync(root, { recursive: true })
-  const tables = exportTables(value, format)
+  const tables = exportTables(value, format, policy)
   for (const t of tables) writeFileSync(join(root, t.filename), t.content, 'utf8')
 
   stdout.write(`wrote ${tables.length} table(s) to ${root}\n`)
+  // Excluded values are not a display detail: Prism keeps them off every graph
+  // and out of every analysis. An export that includes them without saying so
+  // looks like the data Prism used, and is not.
+  const excluded = countExcluded(value)
+  if (excluded > 0) {
+    stdout.write(
+      policy === 'value'
+        ? `  note: ${excluded} cell(s) are excluded in Prism and were written as ordinary values; use --excluded blank or --excluded asterisk to mark them\n`
+        : `  note: ${excluded} cell(s) are excluded in Prism and were written as ${policy === 'blank' ? 'blanks' : 'a value followed by an asterisk'}\n`,
+    )
+  }
   for (const note of value.notes) stdout.write(`  note: ${note}\n`)
   // The document parsed well enough to export, which is not the same as having
   // parsed cleanly. Staying silent here turns a questionable export into an
@@ -433,6 +455,7 @@ function parse(args: string[]): {
     quiet?: boolean | undefined
     help?: boolean | undefined
     cells?: boolean | undefined
+    excluded?: string | undefined
   }
   positionals: string[]
 } {
@@ -442,6 +465,7 @@ function parse(args: string[]): {
       options: {
         json: { type: 'boolean', default: false },
         cells: { type: 'boolean', default: false },
+        excluded: { type: 'string', default: 'value' },
         quiet: { type: 'boolean', short: 'q', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -483,10 +507,15 @@ function main(): number {
     case 'verify':
       if (rest[0] === undefined) return fail('verify needs a file')
       return cmdVerify(rest[0])
-    case 'export':
+    case 'export': {
       if (rest[0] === undefined || rest[1] === undefined)
         return fail('export needs a file and an output directory')
-      return cmdExport(rest[0], rest[1], asJson ? 'json' : 'csv')
+      const policy = values.excluded ?? 'value'
+      if (!(EXCLUDED_POLICIES as readonly string[]).includes(policy)) {
+        return fail(`--excluded must be one of ${EXCLUDED_POLICIES.join(', ')}`)
+      }
+      return cmdExport(rest[0], rest[1], asJson ? 'json' : 'csv', policy as ExcludedPolicy)
+    }
     case 'diff':
       if (rest[0] === undefined || rest[1] === undefined) return fail('diff needs two files')
       return cmdDiff(rest[0], rest[1], values.cells === true, asJson)

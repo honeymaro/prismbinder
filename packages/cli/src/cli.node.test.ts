@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { crc32, deflateRaw, writeZip, type ZipArchive, type ZipEntry } from '@prismbinder/core'
@@ -110,6 +117,61 @@ describe.skipIf(!existsSync(CLI))('inspect --json', () => {
     const r = run('inspect', xml, '--json')
     expect(r.stdout).not.toContain('SECRETVALUE')
     expect(r.stdout).toContain('"sheets"')
+  })
+})
+
+describe.skipIf(!existsSync(CLI))('export', () => {
+  /** One excluded cell, which Prism keeps visible but uses nowhere. */
+  const EXCLUDED =
+    '<?xml version="1.0" encoding="UTF-8"?>\r\n' +
+    '<GraphPadPrismFile PrismXMLVersion="5.00">\r\n' +
+    '<Table ID="T0" XFormat="none" TableType="OneWay" Replicates="1">\r\n' +
+    '<Title>T</Title>\r\n' +
+    '<YColumn Width="81" Decimals="1" Subcolumns="1"><Title>A</Title>' +
+    '<Subcolumn><d>10</d><d Excluded="1">999</d></Subcolumn></YColumn>\r\n' +
+    '</Table>\r\n</GraphPadPrismFile>\r\n'
+
+  function exportWith(...extra: string[]): { result: Run; csv: string } {
+    const src = join(dir, 'excluded.pzfx')
+    writeFileSync(src, EXCLUDED)
+    const out = mkdtempSync(join(tmpdir(), 'prismbinder-export-'))
+    const result = run('export', src, out, ...extra)
+    const file = readdirSync(out).find((f) => f.endsWith('.csv')) as string
+    return { result, csv: readFileSync(join(out, file), 'utf8') }
+  }
+
+  it('says how many values Prism excludes, whatever the policy', () => {
+    // Emitting them unmarked is a legitimate choice - Prism offers it too - but
+    // making it silently turns "the data" into "the data plus values Prism
+    // throws away", with nothing in the output to say so.
+    const { result, csv } = exportWith()
+    expect(result.code).toBe(0)
+    expect(result.stdout).toMatch(/1 cell\(s\) are excluded/)
+    expect(csv).toContain('999')
+  })
+
+  it('can blank or mark them instead', () => {
+    expect(exportWith('--excluded', 'blank').csv).not.toContain('999')
+    expect(exportWith('--excluded', 'asterisk').csv).toContain('999*')
+  })
+
+  it('reports the marked rows in --json, where a cell can hold structure', () => {
+    // A CSV cell can only be blanked or starred. JSON can say which rows they
+    // were, so it does, whatever the policy.
+    const src = join(dir, 'excluded.pzfx')
+    writeFileSync(src, EXCLUDED)
+    const out = mkdtempSync(join(tmpdir(), 'prismbinder-export-'))
+    expect(run('export', src, out, '--json').code).toBe(0)
+    const file = readdirSync(out).find((f) => f.endsWith('.json')) as string
+    const table = JSON.parse(readFileSync(join(out, file), 'utf8'))
+    expect(table.columns[0].excludedRows).toEqual([[1]])
+    expect(table.columns[0].censoredRows).toEqual([[]])
+  })
+
+  it('rejects a policy it does not have', () => {
+    const r = run('export', join(dir, 'sample.prism'), dir, '--excluded', 'maybe')
+    expect(r.code).toBe(2)
+    expect(r.stderr).toContain('--excluded must be one of')
   })
 })
 
