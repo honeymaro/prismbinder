@@ -1,6 +1,11 @@
 import type { Diagnostic } from '@prismbinder/core'
-import { createBundle, createPzfx, type PzfxCreateTable } from '@prismbinder/formats'
-import type { Project, TableView } from './types.js'
+import {
+  createBundle,
+  createPzfx,
+  type PzfxCreateTable,
+  pzfxYFormatFor,
+} from '@prismbinder/formats'
+import { marksFor, type Project, type TableView } from './types.js'
 
 /**
  * Converting between the two formats.
@@ -73,6 +78,37 @@ function tally(project: Project): { losses: string[]; diagnostics: Diagnostic[] 
           'The subcolumn layout of this table has never been observed, so its columns are copied as stored without interpreting what they mean.',
       })
     }
+  }
+
+  // Prism records these per cell and treats them as data-defining, not as
+  // formatting: an excluded value is absent from every analysis, and a censored
+  // one means something different from an observed one. Neither survives, so
+  // neither is folded into the formatting line below.
+  let excluded = 0
+  let censored = 0
+  let generated = 0
+  for (const s of project.sheets) {
+    if (s.kind !== 'data') continue
+    for (const c of s.table.columns) {
+      if (c.generated === true) generated++
+      for (let i = 0; i < c.subcolumns.length; i++) {
+        excluded += marksFor(c, i).excluded.size
+        censored += marksFor(c, i).censored.size
+      }
+    }
+  }
+  if (excluded > 0) {
+    losses.push(
+      `${excluded} excluded value(s) become ordinary values - Prism leaves them out of every analysis and graph`,
+    )
+  }
+  if (censored > 0) {
+    losses.push(`${censored} censored observation(s) lose their censoring mark`)
+  }
+  if (generated > 0) {
+    losses.push(
+      `${generated} generated X column(s) are written out in full rather than as a start value and an interval`,
+    )
   }
 
   losses.push('display settings, fonts, colours and per-cell formatting are not carried over')
@@ -159,9 +195,14 @@ export function toPzfx(project: Project): ConversionResult {
 
   const tables: PzfxCreateTable[] = dataTables(project).map(({ title, table }) => {
     const x = table.columns.find((c) => c.role === 'x')
+    // Without this the writer falls back to `replicates`, and Prism averages
+    // replicates: a mean-and-SD column pair would come out the other side as a
+    // single number halfway between the two.
+    const yFormat = pzfxYFormatFor(table.dataFormat)
     return {
       title,
       ...(table.rowTitles.length > 0 ? { rowTitles: table.rowTitles } : {}),
+      ...(yFormat === undefined ? {} : { yFormat }),
       ...(x === undefined
         ? {}
         : { xColumn: { title: x.title, subcolumns: x.subcolumns.map((s) => [...s]) } }),
@@ -170,6 +211,29 @@ export function toPzfx(project: Project): ConversionResult {
         .map((c) => ({ title: c.title, subcolumns: c.subcolumns.map((s) => [...s]) })),
     }
   })
+
+  // `.pzfx` distinguishes two three-subcolumn layouts the bundle spells one
+  // way, so this direction has to pick one. It picks the offset reading, which
+  // keeps these columns from being read as repeated measurements; a table that
+  // really held absolute limits is now labelled as holding offsets.
+  const ambiguous = dataTables(project).filter(
+    ({ table }) => table.dataFormat === 'y_high_low' || table.dataFormat === 'y_plus_minus',
+  ).length
+  if (ambiguous > 0) {
+    losses.push(
+      `${ambiguous} table(s) with error bounds are written as low-high; the bundle does not record whether they held offsets or absolute limits`,
+    )
+  }
+  // The kind is rebuilt from the columns, so a survival or contingency table
+  // arrives as the XY or column table its shape suggests.
+  const kinds = new Set(
+    dataTables(project)
+      .map(({ table }) => table.tableFormat)
+      .filter((f) => f === 'survival' || f === 'contingency' || f === 'partsofwhole'),
+  )
+  if (kinds.size > 0) {
+    losses.push(`table kind is not carried over for ${[...kinds].sort().join(', ')} tables`)
+  }
 
   if (tables.length === 0) {
     return { bytes: undefined, losses, diagnostics: [...diagnostics, noTables()] }
