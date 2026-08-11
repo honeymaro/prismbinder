@@ -1,0 +1,47 @@
+{
+  "name": "@prismbinder/model",
+  "version": "0.0.0",
+  "description": "Format-neutral document model for GraphPad Prism files",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/honeymaro/prismbinder.git",
+    "directory": "packages/model"
+  },
+  "homepage": "https://github.com/honeymaro/prismbinder#readme",
+  "bugs": {
+    "url": "https://github.com/honeymaro/prismbinder/issues"
+  },
+  "keywords": [
+    "graphpad",
+    "prism",
+    "prismbinder",
+    "convert",
+    "pzfx"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prismbinder/core": "workspace:^",
+    "@prismbinder/formats": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "catalog:build",
+    "vite": "catalog:build",
+    "vitest": "catalog:test"
+  }
+}

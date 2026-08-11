@@ -1,0 +1,17 @@
+{
+  "//": "Typechecks test files, which the package build configs exclude from emit.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": [
+    "packages/*/src/**/*.test.ts",
+    "packages/*/src/**/*.bench.ts",
+    "packages/*/src/**/*.node.ts",
+    "*.config.ts"
+  ]
+}

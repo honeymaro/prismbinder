@@ -1,0 +1,51 @@
+{
+  "name": "@prismbinder/core",
+  "version": "0.0.0",
+  "description": "Byte-faithful primitives for GraphPad Prism file formats: ZIP, deflate, JSON, XML and CSV",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/honeymaro/prismbinder.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/honeymaro/prismbinder#readme",
+  "bugs": {
+    "url": "https://github.com/honeymaro/prismbinder/issues"
+  },
+  "keywords": [
+    "graphpad",
+    "prism",
+    "prismbinder",
+    "zip",
+    "deflate",
+    "csv",
+    "file-format"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rgrove/parse-xml": "catalog:",
+    "jsonc-parser": "catalog:",
+    "pako": "catalog:"
+  },
+  "devDependencies": {
+    "fast-check": "catalog:",
+    "typescript": "catalog:build",
+    "vite": "catalog:build",
+    "vitest": "catalog:test"
+  }
+}

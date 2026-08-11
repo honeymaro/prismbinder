@@ -1,0 +1,31 @@
+{
+  "name": "@prismbinder/editor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prismbinder/core": "workspace:^",
+    "@prismbinder/formats": "workspace:^",
+    "@prismbinder/model": "workspace:^",
+    "@tanstack/react-virtual": "catalog:",
+    "d3-scale": "catalog:",
+    "d3-shape": "catalog:",
+    "react": "catalog:ui",
+    "react-dom": "catalog:ui"
+  },
+  "devDependencies": {
+    "@types/d3-scale": "catalog:",
+    "@types/d3-shape": "catalog:",
+    "@types/react": "catalog:ui",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "^6.0.5",
+    "typescript": "catalog:build",
+    "vite": "catalog:build"
+  }
+}

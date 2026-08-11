@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The browser project is a gate, not a nicety: the codec packages must run
+      # unchanged in a browser, so we prove it rather than claim it.
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # Before the tests, not after: the CLI suite drives the built binary as a
+      # process, and with no dist to find it skipped itself in silence.
+      - name: Build
+        run: pnpm build
+
+      # Every suite runs twice, once under Node and once in Chromium. The golden
+      # deflate canary lives here: if pako's output ever drifts, this catches it
+      # before we corrupt someone's file.
+      #
+      # Corpus fidelity suites need a Prism installation and skip themselves
+      # when there isn't one, so CI checks the codecs while a developer's
+      # machine additionally checks them against hundreds of real documents.
+      - name: Test
+        run: pnpm test
+
+      # Drives the production bundle in a real browser, served from disk.
+      - name: End-to-end
+        run: pnpm test:e2e

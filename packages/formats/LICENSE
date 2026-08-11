@@ -1,0 +1,36 @@
+MIT License
+
+Copyright (c) 2026 prismbinder contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Trademark notice
+
+This license covers the software only. It grants no rights in any trademark.
+
+GraphPad(R) and Prism(R) are trademarks of GraphPad Software, LLC / Dotmatics.
+prismbinder is an independent interoperability implementation and is not
+affiliated with, endorsed by, or sponsored by those companies. Their marks
+appear here solely to identify the file format this software reads, which is
+nominative use and not a claim of association.
+
+No GraphPad source code, sample documents, templates, or other assets are
+included in this repository or in any package published from it.

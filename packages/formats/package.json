@@ -1,0 +1,47 @@
+{
+  "name": "@prismbinder/formats",
+  "version": "0.0.0",
+  "description": "Readers and writers for GraphPad Prism .prism/.prismt bundles and .pzfx documents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/honeymaro/prismbinder.git",
+    "directory": "packages/formats"
+  },
+  "homepage": "https://github.com/honeymaro/prismbinder#readme",
+  "bugs": {
+    "url": "https://github.com/honeymaro/prismbinder/issues"
+  },
+  "keywords": [
+    "graphpad",
+    "prism",
+    "prismbinder",
+    "pzfx",
+    "prismt",
+    "file-format"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prismbinder/core": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "catalog:build",
+    "vite": "catalog:build",
+    "vitest": "catalog:test"
+  }
+}

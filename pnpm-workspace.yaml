@@ -1,0 +1,69 @@
+# Every version lives here, once. Packages reference them with `catalog:`, and
+# `catalogMode: strict` means a dependency added without a catalog entry is an
+# error rather than a silently divergent version.
+#
+# Two entries are deliberately not the latest release. Both will look like
+# neglect to anyone running `pnpm outdated`, so they are explained where the
+# number is, not in a document that can drift away from it.
+#
+#   pako: 3.0.1, pinned exactly (no caret)
+#     3.0.0 flipped `legacyHash` to false, changing the compressed bytes.
+#     Prism's own encoder is in the stock-zlib family, so we pass
+#     `legacyHash: true` explicitly - and a range here would let a future
+#     default change alter output that must stay byte-identical. The golden
+#     canary test in packages/core/src/deflate.test.ts is the second line of
+#     defence; this pin is the first.
+#
+#   typescript: ^6.0.3, not 7.x
+#     TypeScript 7 is the Go rewrite. It is much faster and has no stable
+#     programmatic compiler API yet - the API declaration emit and the wider
+#     tooling ecosystem call. `tsc -b --emitDeclarationOnly` is how this repo
+#     produces its .d.ts files, so 6 is the last line that does the job.
+#     Revisit when 7.x ships the stable API.
+
+packages:
+  - packages/*
+  - apps/*
+
+catalog:
+  '@biomejs/biome': ^2.5.7
+  '@playwright/test': ^1.62.1
+  '@rgrove/parse-xml': ^4.2.3
+  '@tanstack/react-virtual': ^3.14.9
+  '@types/d3-scale': ^4.0.9
+  '@types/d3-shape': ^3.1.8
+  '@types/node': ^24.13.3
+  '@types/react-dom': ^19.2.4
+  '@vitest/browser-playwright': 4.1.10
+  d3-scale: ^4.0.2
+  d3-shape: ^3.2.0
+  fast-check: ^4.9.0
+  fflate: ^0.8.3
+  jsonc-parser: ^3.3.1
+  pako: 3.0.1
+  typescript: ^6.0.3
+  vite: ^8.2.1
+  vitest: ^4.1.10
+
+catalogMode: strict
+
+catalogs:
+  build:
+    '@biomejs/biome': ^2.5.7
+    typescript: ^6.0.3
+    vite: ^8.2.1
+  test:
+    '@playwright/test': ^1.62.1
+    '@vitest/browser-playwright': 4.1.10
+    fast-check: ^4.9.0
+    vitest: ^4.1.10
+  ui:
+    '@tanstack/react-virtual': ^3.14.9
+    '@types/react': ^19.2.18
+    '@types/react-dom': ^19.2.4
+    d3-scale: ^4.0.2
+    d3-shape: ^3.2.0
+    immer: 11.1.16
+    react: ^19.2.8
+    react-dom: ^19.2.8
+    zustand: ^5.0.14

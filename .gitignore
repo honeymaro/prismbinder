@@ -1,0 +1,63 @@
+# deps / build
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+coverage/
+test-results/
+playwright-report/
+
+# editor / os
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# env
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------
+# GraphPad content - never commit
+#
+# Everything below comes from a local Prism installation. We use it
+# locally but do not redistribute it. The scripts in
+# tools/legacy-analysis regenerate all of it on demand.
+# ---------------------------------------------------------------
+
+# Fixtures synced from a local Prism installation
+fixtures/vendor/
+
+# Local-only tooling, not part of this project's published work
+tools/legacy-analysis/local/
+
+# Outputs unpacked from a local installation
+tools/legacy-analysis/extracts/
+tools/legacy-analysis/res/
+tools/legacy-analysis/resrc/
+tools/legacy-analysis/tmpl/
+tools/legacy-analysis/**/__pycache__/
+
+# Third-party bundles the measurement scripts import.
+#
+# fflate, fast-xml-parser, htmlparser2, jsonc-parser, @rgrove/parse-xml and
+# zip.js, fetched whole from esm.sh and jsDelivr so the experiments could run
+# without a package.json. They are other people's code under other people's
+# licences; the header of each names its source and version, and
+# tools/legacy-analysis/README.md says how to fetch them again.
+tools/legacy-analysis/measurements/fflate.mjs
+tools/legacy-analysis/measurements/fxp.mjs
+tools/legacy-analysis/measurements/hp2.mjs
+tools/legacy-analysis/measurements/jsoncp.mjs
+tools/legacy-analysis/measurements/pxml.mjs
+tools/legacy-analysis/measurements/zipjs.mjs
+
+# P1 experiment files (mutations of shipped bundles -> derivative works)
+tools/prism-experiments/out/
+
+# ---------------------------------------------------------------
+# Fixtures we DO commit: only files the user authored themselves
+# from synthetic data (plan section 8 P0/P2/P3) -> fixtures/authored/
+# ---------------------------------------------------------------

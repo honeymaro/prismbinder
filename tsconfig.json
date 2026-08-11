@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/formats"
+    },
+    {
+      "path": "./packages/model"
+    },
+    {
+      "path": "./packages/cli"
+    }
+  ]
+}

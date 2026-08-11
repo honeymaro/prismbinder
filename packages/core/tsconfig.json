@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // Vite emits the JS; tsc only writes .d.ts so the two never fight over dist/
+    "emitDeclarationOnly": true
+  },
+  "include": ["src/**/*.ts"],
+  // Tests are typechecked by the root tsconfig.test.json, not emitted here
+  "exclude": ["src/**/*.test.ts", "src/**/*.bench.ts", "src/**/*.node.ts"]
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // DOM gives us the Web APIs the codecs are allowed to use (TextEncoder,
+    // crypto.subtle, DataView...). `types: []` keeps @types/node out of scope,
+    // so a stray `Buffer` or `process` fails to compile in the codec packages
+    // rather than shipping to a browser. The runtime contract is enforced by
+    // types here and by Biome's noNodejsModules rule at lint time.
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}
