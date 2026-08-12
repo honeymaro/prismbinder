@@ -1,12 +1,12 @@
 {
-  "name": "@prismbinder/cli",
+  "name": "@prismbinder/charts",
   "version": "0.0.0",
-  "description": "Command line tools for GraphPad Prism files",
+  "description": "Charts reconstructed from GraphPad Prism data tables",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/honeymaro/prismbinder.git",
-    "directory": "packages/cli"
+    "directory": "packages/charts"
   },
   "homepage": "https://github.com/honeymaro/prismbinder#readme",
   "bugs": {
@@ -16,14 +16,11 @@
     "graphpad",
     "prism",
     "prismbinder",
-    "cli",
-    "pzfx",
-    "convert"
+    "chart",
+    "svg"
   ],
   "type": "module",
-  "bin": {
-    "prismbinder": "./dist/cli.js"
-  },
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -39,13 +36,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@prismbinder/charts": "workspace:^",
-    "@prismbinder/core": "workspace:^",
-    "@prismbinder/formats": "workspace:^",
     "@prismbinder/model": "workspace:^"
   },
   "devDependencies": {
-    "@types/node": "catalog:",
     "typescript": "catalog:build",
     "vite": "catalog:build",
     "vitest": "catalog:test"

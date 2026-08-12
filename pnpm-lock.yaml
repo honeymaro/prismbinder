@@ -117,6 +117,9 @@ importers:
 
   apps/editor:
     dependencies:
+      '@prismbinder/charts':
+        specifier: workspace:^
+        version: link:../../packages/charts
       '@prismbinder/core':
         specifier: workspace:^
         version: link:../../packages/core
@@ -164,8 +167,27 @@ importers:
         specifier: catalog:build
         version: 8.2.1(@types/node@24.13.3)
 
+  packages/charts:
+    dependencies:
+      '@prismbinder/model':
+        specifier: workspace:^
+        version: link:../model
+    devDependencies:
+      typescript:
+        specifier: catalog:build
+        version: 6.0.3
+      vite:
+        specifier: catalog:build
+        version: 8.2.1(@types/node@24.13.3)
+      vitest:
+        specifier: catalog:test
+        version: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(vite@8.2.1(@types/node@24.13.3))
+
   packages/cli:
     dependencies:
+      '@prismbinder/charts':
+        specifier: workspace:^
+        version: link:../charts
       '@prismbinder/core':
         specifier: workspace:^
         version: link:../core

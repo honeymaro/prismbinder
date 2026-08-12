@@ -19,6 +19,7 @@ import {
 } from '@prismbinder/core'
 import type {
   AnalysisSheet,
+  AxisSegment,
   BundleDocument,
   BundleIdentity,
   CellFlagRange,
@@ -27,6 +28,8 @@ import type {
   DataSheet,
   DataTable,
   GraphSheet,
+  MvFigure,
+  MvGraph,
   PrismBundle,
   SimpleSheet,
 } from './types.js'
@@ -227,6 +230,72 @@ function readReplicates(
   return { series, cellFlags }
 }
 
+/**
+ * Reads a Multiple Variables graph, which states its own appearance.
+ *
+ * Every other graph family keeps its geometry in the PCFF blob and this returns
+ * `undefined` for them - not because we gave up, but because there is nothing
+ * in their JSON to read: a `FENGraphSheet` holds a uid, a title and a list of
+ * inputs, and no axis, limit, symbol or colour setting at all.
+ */
+function readMvGraph(doc: JsonDocument): MvGraph | undefined {
+  const graph = getMember(doc.root, 'graph')
+  if (graph?.kind !== 'object') return undefined
+  if (asString(getMember(graph, '@class')) !== 'MVGraph') return undefined
+
+  const settings = getMember(graph, 'gdoSettingsExt')
+  const kinds = stringArray(at(getMember(graph, 'gdoTypesExt'), 'defaults'))
+  const figures: MvFigure[] = []
+  for (const kind of kinds) {
+    const node = settings?.kind === 'object' ? getMember(settings, kind) : undefined
+    const colormap = at(node, 'colormap')
+    figures.push({
+      kind,
+      colorScheme: asString(at(colormap, 'colorScheme')) ?? asString(at(colormap, 'colorSchemeID')),
+      branchesLink: asString(at(node, 'branchesLink')),
+      clustersLink: asString(at(node, 'clustersLink')),
+    })
+  }
+
+  return {
+    dataSheet: asString(getMember(graph, 'dataSheet')),
+    figures,
+    axisX: readAxisSegment(getMember(graph, 'axisX')),
+    axisY: readAxisSegment(getMember(graph, 'axisY')),
+  }
+}
+
+/**
+ * The first segment of an axis.
+ *
+ * Prism allows several, for a broken axis; the corpus only ever uses one. A
+ * categorical segment lives in `segments_ext` beside an empty linear one, which
+ * is how a heat map says its axis names rows rather than measuring them.
+ */
+function readAxisSegment(axis: JsonNode | undefined): AxisSegment | undefined {
+  if (axis?.kind !== 'object') return undefined
+  const linear = first(getMember(axis, 'segments'))
+  const ext = first(getMember(axis, 'segments_ext'))
+  const categorical = asString(at(ext, '@class')) === 'CategoricalAxisSegment'
+  if (linear === undefined && ext === undefined) return undefined
+  return {
+    lowerLimit: asNumber(at(linear, 'lowerLimit')),
+    upperLimit: asNumber(at(linear, 'upperLimit')),
+    interval: asNumber(at(linear, 'interval')),
+    startTicksValue: asNumber(at(linear, 'startTicksValue')),
+    categorical,
+  }
+}
+
+function first(node: JsonNode | undefined): JsonNode | undefined {
+  return node?.kind === 'array' ? node.items[0] : undefined
+}
+
+/** `getMember` on something that may not be there. */
+function at(node: JsonNode | undefined, key: string): JsonNode | undefined {
+  return node === undefined ? undefined : getMember(node, key)
+}
+
 function readTable(ctx: Ctx, sheetJson: JsonDocument, sheetName: string): DataTable | undefined {
   const tableNode = getMember(sheetJson.root, 'table')
   if (tableNode?.kind !== 'object') return undefined
@@ -366,6 +435,7 @@ export function readBundle(
         results: json(ctx, `analyses/${id}/results.json`),
         inputDataSets: refIds(getMember(doc.root, 'inputDataSets')),
         inputSheets: refIds(getMember(doc.root, 'inputSheets')),
+        resultSheets: resultSheets(ctx, id, getMember(doc.root, 'resultSheets')),
       })
       continue
     }
@@ -381,6 +451,7 @@ export function readBundle(
         title: asString(getMember(doc.root, 'title')) ?? document.sheetTitles.get(uid),
         json: doc,
         hasBinary: byName.has(`graphs/${id}/data.bin`),
+        mv: readMvGraph(doc),
         inputDataSets: stringArray(getMember(doc.root, 'inputDataSets')),
       })
       continue
@@ -441,6 +512,33 @@ function simpleSheet(doc: JsonDocument, id: string, document: BundleDocument): S
     title: asString(getMember(doc.root, 'title')) ?? document.sheetTitles.get(uid),
     json: doc,
   }
+}
+
+/**
+ * The result views of one analysis, each resolved to the sheet holding it.
+ *
+ * The analysis sheet lists a view's own uid, which matches no data sheet. The
+ * `AnalysisView` record beside it carries `dataSheet`, and that is the uid a
+ * caller can actually look up.
+ */
+function resultSheets(
+  ctx: Ctx,
+  analysisId: string,
+  node: ReturnType<typeof getMember>,
+): { uid: string; title: string; dataSheet: string | undefined }[] {
+  if (node?.kind !== 'array') return []
+  const out: { uid: string; title: string; dataSheet: string | undefined }[] = []
+  for (const item of node.items) {
+    const uid = asString(getMember(item, 'uid'))
+    if (uid === undefined) continue
+    const view = json(ctx, `analyses/${analysisId}/result_sheets/${uid}.json`)
+    out.push({
+      uid,
+      title: asString(getMember(item, 'title')) ?? '',
+      dataSheet: view === undefined ? undefined : asString(getMember(view.root, 'dataSheet')),
+    })
+  }
+  return out
 }
 
 /** `inputDataSets` is sometimes a list of ids and sometimes a list of `{uid, title}`. */

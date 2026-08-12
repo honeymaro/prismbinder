@@ -39,6 +39,15 @@ export interface DataSheetView {
   readonly id: string
   readonly title: string
   readonly table: TableView
+  /**
+   * The analysis that produced this sheet, when one did.
+   *
+   * A results view is a table of numbers until you know what made it. The same
+   * six columns are a survival curve if a SURVIVAL analysis wrote them and an
+   * ordinary table if nothing did, and only a curve may be drawn as a
+   * staircase.
+   */
+  readonly producedBy: { readonly analysisClass: string; readonly sheetTitle: string } | undefined
 }
 
 export interface AnalysisSheetView {
@@ -58,12 +67,44 @@ export interface AnalysisSheetView {
   readonly results: JsonNode | undefined
 }
 
+/**
+ * A Multiple Variables graph, as far as this view carries it.
+ *
+ * The one graph family whose appearance the file states rather than hides. See
+ * `docs/charts.md`: a `FENGraphSheet` keeps 250 bytes of JSON with no axis or
+ * symbol setting in it at all, while an `MVGraph` keeps 11 to 15 KB naming its
+ * figures, axis limits and colour scheme.
+ */
+export interface MvGraphView {
+  readonly dataSheet: string | undefined
+  readonly figures: readonly {
+    readonly kind: string
+    readonly colorScheme: string | undefined
+    readonly branchesLink: string | undefined
+    readonly clustersLink: string | undefined
+  }[]
+  readonly axisY:
+    | {
+        readonly min: number | undefined
+        readonly max: number | undefined
+        readonly interval: number | undefined
+      }
+    | undefined
+}
+
 export interface GraphSheetView {
   readonly kind: 'graph'
   readonly id: string
   readonly title: string
-  /** True when the geometry is a PCFF blob we carry but do not interpret. */
+  /**
+   * True when the geometry is a PCFF blob we carry but do not interpret.
+   *
+   * Not simply "a `data.bin` exists": four of the seven MV graphs in the corpus
+   * carry a binary that is not PCFF and describe themselves fully in JSON, so
+   * calling those opaque would be wrong in the one place it matters.
+   */
   readonly opaque: boolean
+  readonly mv: MvGraphView | undefined
 }
 
 export interface InfoSheetView {

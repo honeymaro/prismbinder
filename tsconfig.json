@@ -11,6 +11,9 @@
       "path": "./packages/model"
     },
     {
+      "path": "./packages/charts"
+    },
+    {
       "path": "./packages/cli"
     }
   ]

@@ -6,7 +6,20 @@
     "emitDeclarationOnly": true,
     "types": ["node"]
   },
-  "references": [{ "path": "../core" }, { "path": "../formats" }, { "path": "../model" }],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../formats"
+    },
+    {
+      "path": "../model"
+    },
+    {
+      "path": "../charts"
+    }
+  ],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.node.ts"]
 }

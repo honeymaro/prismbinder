@@ -31,6 +31,12 @@ const OVERSCAN = 12
 export interface GridColumn {
   readonly key: string
   readonly label: string
+  /**
+   * Shown greyed when the file names no column, so the header band stays
+   * usable without claiming a title the document does not contain. 97 of the
+   * corpus's 513 data columns have none.
+   */
+  readonly placeholder: string
   readonly sub: string
   readonly cells: readonly string[]
   /** The column in `data.csv`, which is what an edit has to name. */
@@ -129,7 +135,9 @@ export function DataGrid({ sheetId, table, columns, edits, onEdit }: DataGridPro
             <th className="rownum" aria-colindex={1} scope="col" />
             {columns.map((c, i) => (
               <th key={c.key} aria-colindex={i + 2} scope="col">
-                <div className="grid__title">{c.label}</div>
+                <div className={c.label === '' ? 'grid__title grid__title--none' : 'grid__title'}>
+                  {c.label === '' ? c.placeholder : c.label}
+                </div>
                 {c.sub !== '' ? <div className="grid__sub">{c.sub}</div> : null}
               </th>
             ))}
@@ -165,7 +173,7 @@ export function DataGrid({ sheetId, table, columns, edits, onEdit }: DataGridPro
                         data-row={v.index}
                         data-col={i}
                         value={value}
-                        aria-label={`${c.label || 'column'} row ${v.index + 1}`}
+                        aria-label={`${c.label || c.placeholder || 'column'} row ${v.index + 1}`}
                         onChange={(e) => onEdit(key, e.target.value)}
                       />
                     )}

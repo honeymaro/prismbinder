@@ -6,6 +6,7 @@ dist/
 coverage/
 test-results/
 playwright-report/
+.vitest-attachments/
 
 # editor / os
 .DS_Store

@@ -4,6 +4,18 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { argv, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
+  type ChartKind,
+  mvContext,
+  type PlanOptions,
+  planChart,
+  planMvGraph,
+  provenanceOf,
+  renderChart,
+  toSvg,
+  WHISKER_RULES,
+  type WhiskerRule,
+} from '@prismbinder/charts'
+import {
   bytesEqual,
   decodeUtf8,
   isSafeEntryName,
@@ -50,6 +62,8 @@ Usage
   prismbinder verify <file>               check that we can round-trip it byte-for-byte
   prismbinder export <file> <dir> [--json] [--excluded value|asterisk|blank]
                                     write every data table out as CSV (or JSON)
+  prismbinder plot <file> <dir> [--chart <kind>] [--whiskers <rule>] [--log]
+                                    draw each data table as an SVG (reconstructed)
   prismbinder anonymize <in> <out>        clear the saving user's account name
   prismbinder new <out.prism> [csv...]    build a bundle from CSV files
   prismbinder convert <in> <out>          move the data to the other format (lossy)
@@ -335,6 +349,81 @@ function cmdAnonymize(input: string, output: string): number {
 }
 
 /** Writes every data table to a directory. The commonest reason to reach for this tool. */
+/**
+ * Draws every data table.
+ *
+ * The output is not Prism's figure. Prism keeps that in a binary this project
+ * carries and never decodes, so what is written here is the data plotted the
+ * way this table kind should be plotted - which every file says, in its title
+ * and in its accessible label, because a picture is the form in which someone
+ * is most likely to assume otherwise.
+ */
+function cmdPlot(file: string, outDir: string, opts: PlanOptions): number {
+  const bytes = readInput(file)
+  const { value, diagnostics } = readProject(bytes, file)
+  if (value === undefined) {
+    stderr.write(`prismbinder: ${file} could not be read\n`)
+    for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.message}\n`)
+    return EXIT_DIAGNOSTICS
+  }
+
+  const root = resolve(outDir)
+  mkdirSync(root, { recursive: true })
+
+  let written = 0
+  let read = 0
+  const used = new Set<string>()
+  const ctx = mvContext(value)
+
+  value.sheets.forEach((sheet, i) => {
+    // A Multiple Variables graph states its own appearance, so it is drawn from
+    // the graph sheet rather than guessed at from the table. Every other family
+    // keeps that in a binary we do not decode, and `planMvGraph` says so by
+    // returning nothing.
+    const spec =
+      sheet.kind === 'graph'
+        ? planMvGraph(sheet, ctx)
+        : sheet.kind === 'data'
+          ? planChart(sheet.table, sheet.title, { ...opts, ...provenanceOf(sheet) })
+          : undefined
+    if (spec === undefined) return
+    if (spec.marks.length === 0) {
+      // Every note, not the first: the reason a chart was refused is not always
+      // the first thing it had to say about itself.
+      if (spec.notes.length === 0) stdout.write(`  skipped ${sheet.title}: nothing plottable\n`)
+      for (const note of spec.notes) stdout.write(`  skipped ${sheet.title}: ${note}\n`)
+      return
+    }
+    let name = slugFor(sheet.title, `sheet-${i + 1}`)
+    let n = 2
+    while (used.has(name)) name = `${slugFor(sheet.title, `sheet-${i + 1}`)} (${n++})`
+    used.add(name)
+    writeFileSync(join(root, `${name}.svg`), toSvg(renderChart(spec)), 'utf8')
+    written++
+    if (spec.fidelity === 'read') read++
+    for (const note of spec.notes) stdout.write(`  ${name}: ${note}\n`)
+  })
+
+  stdout.write(`wrote ${written} chart(s) to ${root}\n`)
+  if (written > read) {
+    stdout.write(`  ${written - read} reconstructed from the data, not the graphs Prism drew\n`)
+  }
+  if (read > 0) {
+    stdout.write(`  ${read} read from the graph sheet, which states its own appearance\n`)
+  }
+  for (const d of diagnostics) stderr.write(`  ${d.severity} ${d.code} ${d.path} ${d.message}\n`)
+  return diagnostics.some((d) => d.severity === 'error') ? EXIT_DIAGNOSTICS : EXIT_OK
+}
+
+/** Same rule the exporter uses, so a table's CSV and SVG sit side by side. */
+function slugFor(s: string, fallback: string): string {
+  const cleaned = s
+    .replace(/[^\w .\-]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned === '' ? fallback : cleaned.slice(0, 80)
+}
+
 function cmdExport(
   file: string,
   outDir: string,
@@ -456,6 +545,9 @@ function parse(args: string[]): {
     help?: boolean | undefined
     cells?: boolean | undefined
     excluded?: string | undefined
+    chart?: string | undefined
+    whiskers?: string | undefined
+    log?: boolean | undefined
   }
   positionals: string[]
 } {
@@ -466,6 +558,9 @@ function parse(args: string[]): {
         json: { type: 'boolean', default: false },
         cells: { type: 'boolean', default: false },
         excluded: { type: 'string', default: 'value' },
+        chart: { type: 'string' },
+        whiskers: { type: 'string' },
+        log: { type: 'boolean', default: false },
         quiet: { type: 'boolean', short: 'q', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -515,6 +610,19 @@ function main(): number {
         return fail(`--excluded must be one of ${EXCLUDED_POLICIES.join(', ')}`)
       }
       return cmdExport(rest[0], rest[1], asJson ? 'json' : 'csv', policy as ExcludedPolicy)
+    }
+    case 'plot': {
+      if (rest[0] === undefined || rest[1] === undefined)
+        return fail('plot needs a file and an output directory')
+      const rule = values.whiskers
+      if (rule !== undefined && !(WHISKER_RULES as readonly string[]).includes(rule)) {
+        return fail(`--whiskers must be one of ${WHISKER_RULES.join(', ')}`)
+      }
+      return cmdPlot(rest[0], rest[1], {
+        ...(values.chart === undefined ? {} : { kind: values.chart as ChartKind }),
+        ...(rule === undefined ? {} : { whiskers: rule as WhiskerRule }),
+        ...(values.log === true ? { logX: true, logY: true } : {}),
+      })
     }
     case 'diff':
       if (rest[0] === undefined || rest[1] === undefined) return fail('diff needs two files')

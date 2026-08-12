@@ -52,6 +52,20 @@ export function fromBundle(bundle: PrismBundle): Project {
   const sheets: Sheet[] = []
   const generatedX: string[] = []
 
+  // Which analysis produced which results view. Prism writes those views as
+  // ordinary data sheets, so without this link a computed survival curve is
+  // indistinguishable from a table someone typed.
+  const producedBy = new Map<string, { analysisClass: string; sheetTitle: string }>()
+  for (const a of bundle.analyses) {
+    if (a.analysisClass === undefined) continue
+    for (const r of a.resultSheets) {
+      // Keyed on the data sheet the view points at, not on the view's own uid,
+      // which matches nothing.
+      if (r.dataSheet === undefined) continue
+      producedBy.set(r.dataSheet, { analysisClass: a.analysisClass, sheetTitle: r.title })
+    }
+  }
+
   for (const s of bundle.dataSheets) {
     const t = s.table
     if (t === undefined) continue
@@ -112,7 +126,14 @@ export function fromBundle(bundle: PrismBundle): Project {
       }
       columns.push({
         id: uid,
-        title: bundle.dataSets.get(uid)?.title ?? `Column ${i + 1}`,
+        // Empty when the file says nothing, never a name of our own. 97 of the
+        // 513 Y columns in the corpus carry no `title` at all - the first column
+        // of a clustering distance matrix, every column of a tabular results
+        // view - and Prism draws a blank header for them. Inventing `Column 3`
+        // here put an invented name on a chart legend and in an export, where
+        // nothing marks it as ours. What looks like a header on those sheets in
+        // Prism is a row of the data itself, flagged `SECTION_TITLE`.
+        title: bundle.dataSets.get(uid)?.title ?? '',
         role: 'y',
         subcolumns,
         marks: marksFromFlags(bundle.dataSets.get(uid)?.cellFlags, subcolumns.length, rowCount),
@@ -130,7 +151,13 @@ export function fromBundle(bundle: PrismBundle): Project {
       storage: storageSemantics(t.dataFormat),
     }
 
-    sheets.push({ kind: 'data', id: s.uid, title: s.title ?? 'Data', table })
+    sheets.push({
+      kind: 'data',
+      id: s.uid,
+      title: s.title ?? 'Data',
+      table,
+      producedBy: producedBy.get(s.uid),
+    })
   }
 
   for (const a of bundle.analyses) {
@@ -145,7 +172,33 @@ export function fromBundle(bundle: PrismBundle): Project {
   }
 
   for (const g of bundle.graphs) {
-    sheets.push({ kind: 'graph', id: g.uid, title: g.title ?? 'Graph', opaque: g.hasBinary })
+    sheets.push({
+      kind: 'graph',
+      id: g.uid,
+      title: g.title ?? 'Graph',
+      // A graph that describes itself is not opaque, whatever sits beside it.
+      opaque: g.hasBinary && g.mv === undefined,
+      mv:
+        g.mv === undefined
+          ? undefined
+          : {
+              dataSheet: g.mv.dataSheet,
+              figures: g.mv.figures.map((f) => ({
+                kind: f.kind,
+                colorScheme: f.colorScheme,
+                branchesLink: f.branchesLink,
+                clustersLink: f.clustersLink,
+              })),
+              axisY:
+                g.mv.axisY === undefined
+                  ? undefined
+                  : {
+                      min: g.mv.axisY.lowerLimit,
+                      max: g.mv.axisY.upperLimit,
+                      interval: g.mv.axisY.interval,
+                    },
+            },
+    })
   }
 
   for (const i of bundle.infoSheets) {
@@ -205,7 +258,7 @@ export function fromPzfx(doc: PzfxDocument): Project {
     t.yColumns.forEach((c, i) => {
       columns.push({
         id: `${t.id ?? idx}-y${i}`,
-        title: c.title ?? `Column ${i + 1}`,
+        title: c.title ?? '',
         role: 'y',
         subcolumns: c.subcolumns.map((s) => s.cells.map(cellText)),
         marks: pzfxMarks(c),
@@ -220,6 +273,9 @@ export function fromPzfx(doc: PzfxDocument): Project {
       kind: 'data',
       id: t.id ?? `table-${idx}`,
       title: t.title ?? `Table ${idx + 1}`,
+      // The XML generation stores no analysis results at all, so nothing here
+      // can be attributed to one.
+      producedBy: undefined,
       table: {
         rowCount,
         rowTitles: columns.find((c) => c.role === 'rowTitles')?.subcolumns[0] ?? [],

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@prismbinder/charts": "workspace:^",
     "@prismbinder/core": "workspace:^",
     "@prismbinder/formats": "workspace:^",
     "@prismbinder/model": "workspace:^",

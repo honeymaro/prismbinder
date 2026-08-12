@@ -1,5 +1,24 @@
 # Chart support: where we are and how to cover the rest
 
+> **Status, 2026-08-12.** C1 to C5 are built and green. `@prismbinder/charts`
+> exists; the editor and `prismbinder plot` both render through it. Implemented:
+> points and lines, scatter and aligned dot plots, bars (interleaved, stacked,
+> horizontal), floating bars, symbol at mean, before-after, box and whiskers with
+> all seven rules, violins, pie and donut, Kaplan-Meier curves, and the two
+> Multiple Variables figures that are read from the file rather than
+> reconstructed. Linear, log and category axes.
+>
+> Three things this document said turned out to be wrong or incomplete, and are
+> corrected in place below: **Prism's percentile rule is now measured**, not an
+> open question; **Tukey whiskers need clamping** to their own hinges, which no
+> description of the rule mentions; and the C2 work was only half done until
+> scatter plots stopped using the row number as an axis.
+>
+> Not built, and deliberately: a second Y axis, symbol shapes, nudging, arrows
+> and per-point formatting. Every one of those is a choice recorded only in the
+> PCFF blob, so implementing them would mean inventing an appearance and
+> presenting it as the file's.
+
 ## Two kinds of graph sheet, and only one of them is opaque
 
 The blanket claim that "graph geometry is a PCFF blob" is true of most graphs and false of a whole
@@ -319,7 +338,8 @@ envelopes; nudging; symbol shapes; before-after; three-way grouped layout; per-p
 
 | Risk | Mitigation |
 |---|---|
-| Percentile method differs from Prism's | V1 catches it on the first run. The guide already warns Prism differs from Excel |
+| ~~Percentile method differs from Prism's~~ | **Settled by V1 on the first run.** Prism uses the Weibull rule, position `(n+1)p`. Of the five common definitions only that one reproduces all four quartiles Prism stored for the two columns it has: Q1 7.75 and Q3 138.75, where Excel's default gives 12.75 and 105.5. The guide warns that Prism differs from Excel without saying how - it differs from `PERCENTILE.INC` and agrees with `PERCENTILE.EXC` |
+| A Tukey whisker can end inside its own box | Found by the corpus suite rather than by reasoning. A hinge is interpolated between two values, so on a small skewed sample the furthest point inside the fence can sit below q3 - `Col. stats of Data 1` has a q3 of 499.625 whose nearest inside point is 107.5. The whiskers are clamped to the hinges. No description of the rule mentions this |
 | Violin bandwidth mapping is unspecified | Ship our own, label it, do not claim it matches |
 | Category spacing rules (interleave, stack, group, superimpose) are visual conventions with no written spec | Not derivable from the sample files - that geometry is inside PCFF. Either eyeball a graph rendered by Prism, or choose a convention and label it as ours |
 | A reconstructed chart gets mistaken for Prism's | The badge is not optional and not dismissible. Every export carries it too |

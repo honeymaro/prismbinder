@@ -138,3 +138,26 @@ describe('the neutral view of a .pzfx table', () => {
     }
   })
 })
+
+describe('columns the file never named', () => {
+  it('are reported as untitled rather than given a name of our own', () => {
+    // 97 of the 513 data columns in the corpus carry no title: the first column
+    // of a clustering distance matrix, every column of a tabular results view.
+    // Filling those in with `Column 1` put a name nothing in the document
+    // supports onto chart legends and into exports, where it reads as the
+    // file's own. What looks like a header on those sheets in Prism is a row of
+    // the data, flagged `SECTION_TITLE`.
+    const bytes = doc(
+      'XFormat="none" TableType="OneWay" EVFormat="AsteriskAfterNumber"',
+      '<YColumn Width="81" Decimals="0" Subcolumns="1"><Title/>' +
+        '<Subcolumn><d>10</d><d>12</d></Subcolumn></YColumn>\r\n' +
+        '<YColumn Width="81" Decimals="0" Subcolumns="1"><Title>Named</Title>' +
+        '<Subcolumn><d>3</d><d>4</d></Subcolumn></YColumn>\r\n',
+    )
+    const { value } = readProject(bytes, 'x.pzfx')
+    const sheet = value?.sheets[0]
+    if (sheet?.kind !== 'data') throw new Error('expected a data sheet')
+    const titles = sheet.table.columns.filter((c) => c.role === 'y').map((c) => c.title)
+    expect(titles).toEqual(['', 'Named'])
+  })
+})

@@ -100,7 +100,7 @@ test('opens a real Prism file entirely in the browser', async ({ page }) => {
   await expect(page.getByText(/format \d+-\d+-\d+/)).toBeVisible()
 })
 
-test('marks graphs it cannot render rather than drawing something wrong', async ({ page }) => {
+test('tells the two kinds of graph sheet apart, and draws the one it can', async ({ page }) => {
   const file = sampleBundle()
   test.skip(file === undefined, 'no Prism installation found')
 
@@ -110,17 +110,32 @@ test('marks graphs it cannot render rather than drawing something wrong', async 
 
   const graphs = page.getByRole('heading', { name: /^Graphs/ })
   test.skip((await graphs.count()) === 0, 'sample has no graphs')
+  const list = page.locator('.sheetgroup', { has: graphs }).locator('button')
 
-  // Pick a graph the sidebar has flagged as carrying an opaque binary; not
-  // every graph sheet has one, and the two cases say different things.
-  const opaque = page
-    .locator('.sheetgroup', { has: graphs })
-    .locator('button', { has: page.locator('.badge', { hasText: 'binary' }) })
-  test.skip((await opaque.count()) === 0, 'sample has no graph with stored geometry')
+  // A graph carrying the legacy binary says so and draws nothing. A Multiple
+  // Variables graph states its own appearance in JSON, so it is drawn - and
+  // must not wear the reconstructed badge, because it is not one.
+  const opaque = list.filter({ has: page.locator('.badge', { hasText: 'binary' }) })
+  const readable = list.filter({ hasNot: page.locator('.badge', { hasText: 'binary' }) })
+  expect(
+    (await opaque.count()) + (await readable.count()),
+    'the sample should have at least one graph of either kind',
+  ).toBeGreaterThan(0)
 
-  await opaque.first().click()
-  await expect(page.getByText('Not rendered.')).toBeVisible()
-  await expect(page.getByText(/carries through untouched but does not decode/)).toBeVisible()
+  if ((await opaque.count()) > 0) {
+    await opaque.first().click()
+    await expect(page.getByText('Not rendered.')).toBeVisible()
+    await expect(page.getByText(/carries through untouched but does not decode/)).toBeVisible()
+  }
+
+  if ((await readable.count()) > 0) {
+    await readable.first().click()
+    const drawn = page.locator('.preview .badge', { hasText: 'from the file' })
+    const refused = page.getByText('Not drawn.')
+    // One or the other: a figure kind we read, or an honest refusal naming why.
+    await expect(drawn.or(refused).first()).toBeVisible()
+    await expect(page.locator('.preview .badge', { hasText: 'reconstructed' })).toHaveCount(0)
+  }
 })
 
 test('refuses the legacy binary with an actionable message', async ({ page }) => {

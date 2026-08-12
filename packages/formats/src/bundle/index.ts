@@ -23,6 +23,7 @@ export {
 export { type ReadBundleOptions, readBundle } from './read.js'
 export type {
   AnalysisSheet,
+  AxisSegment,
   BundleDocument,
   BundleIdentity,
   BundleVersion,
@@ -33,6 +34,8 @@ export type {
   DataSheet,
   DataTable,
   GraphSheet,
+  MvFigure,
+  MvGraph,
   PrismBundle,
   SimpleSheet,
   TableFormat,

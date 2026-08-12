@@ -1,5 +1,7 @@
-import type { Sheet } from '@prismbinder/model'
+import { type MvContext, planMvGraph } from '@prismbinder/charts'
+import type { GraphSheetView, Sheet } from '@prismbinder/model'
 import { useState } from 'react'
+import { ChartFigure } from './ChartFigure.js'
 import { DataGrid, type GridColumn } from './DataGrid.js'
 import type { EditMap } from './document.js'
 import { Preview } from './Preview.js'
@@ -10,9 +12,11 @@ export interface SheetViewProps {
   readonly edits: EditMap
   /** Absent when the container cannot be written back (XML documents, for now). */
   readonly onEdit: ((key: string, value: string) => void) | undefined
+  /** Lets a Multiple Variables graph resolve the data and results it points at. */
+  readonly mv: MvContext
 }
 
-export function SheetView({ sheet, edits, onEdit }: SheetViewProps) {
+export function SheetView({ sheet, edits, onEdit, mv }: SheetViewProps) {
   switch (sheet.kind) {
     case 'data':
       return <DataSheet sheet={sheet} edits={edits} onEdit={onEdit} />
@@ -51,25 +55,7 @@ export function SheetView({ sheet, edits, onEdit }: SheetViewProps) {
         </div>
       )
     case 'graph':
-      return (
-        <div className="panel">
-          <h2>{sheet.title}</h2>
-          {sheet.opaque ? (
-            <div className="placeholder">
-              <strong>Not rendered.</strong>
-              <p>
-                This graph's geometry lives in Prism's legacy binary format, which prismbinder
-                carries through untouched but does not decode. Reproducing it would mean decoding
-                hundreds of structure fields, and a graph drawn from a partial understanding would
-                be worse than none.
-              </p>
-              <p className="muted">The underlying data is available on its data sheet.</p>
-            </div>
-          ) : (
-            <p className="muted">This graph has no stored geometry.</p>
-          )}
-        </div>
-      )
+      return <GraphSheet sheet={sheet} mv={mv} />
     case 'info':
       return (
         <div className="panel">
@@ -91,6 +77,70 @@ export function SheetView({ sheet, edits, onEdit }: SheetViewProps) {
   }
 }
 
+/**
+ * A graph sheet, which is one of two very different things.
+ *
+ * A Multiple Variables graph states its own appearance in JSON - its figures,
+ * axis limits, colour scheme, and a link into the analysis result holding a
+ * dendrogram's branches - so it is drawn, and drawn without the reconstructed
+ * badge, because it is not a reconstruction.
+ *
+ * Every other family keeps all of that in the legacy binary. There is nothing
+ * to draw, and half-drawing it would be worse than saying so.
+ */
+function GraphSheet({ sheet, mv }: { sheet: GraphSheetView; mv: MvContext }) {
+  const spec = planMvGraph(sheet, mv)
+
+  if (spec !== undefined && spec.marks.length > 0) {
+    return (
+      <div className="panel">
+        <h2>{sheet.title}</h2>
+        <div className="preview">
+          <div className="preview__head">
+            <span className="badge" title="Read from the graph sheet, which states its appearance">
+              from the file
+            </span>
+            <span className="muted small">
+              A Multiple Variables graph records what it draws, so this one is read rather than
+              reconstructed.
+            </span>
+          </div>
+          <ChartFigure spec={spec} />
+          {spec.notes.map((note) => (
+            <p className="muted small" key={note}>
+              {note}
+            </p>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="panel">
+      <h2>{sheet.title}</h2>
+      {sheet.opaque ? (
+        <div className="placeholder">
+          <strong>Not rendered.</strong>
+          <p>
+            This graph's geometry lives in Prism's legacy binary format, which prismbinder carries
+            through untouched but does not decode. Reproducing it would mean decoding hundreds of
+            structure fields, and a graph drawn from a partial understanding would be worse than
+            none.
+          </p>
+          <p className="muted">The underlying data is available on its data sheet.</p>
+        </div>
+      ) : (
+        <div className="placeholder">
+          <strong>Not drawn.</strong>
+          <p>{spec?.notes[0] ?? 'This graph has no stored geometry.'}</p>
+          <p className="muted">The underlying data is available on its data sheet.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DataSheet({
   sheet,
   edits,
@@ -108,11 +158,20 @@ function DataSheet({
   // column in data.csv, which is what an edit has to name.
   const flat: GridColumn[] = []
   let csvIndex = 0
+  let dataColumn = 0
   for (const c of t.columns) {
+    // Counted over data columns only, so the placeholder matches what a person
+    // would call the third column rather than the third entry in the layout.
+    const nth = c.role === 'y' ? ++dataColumn : 0
     c.subcolumns.forEach((cells, i) => {
       flat.push({
         key: `${c.id}-${i}`,
+        // The file's own title, or nothing. It used to read `Column 1`,
+        // `Column 2`, `Column 3` for columns the document never named, which
+        // then travelled into chart legends and exports as though the file had
+        // said it. The placeholder below is shown greyed instead.
         label: i === 0 ? c.title : '',
+        placeholder: i === 0 && nth > 0 ? `Column ${nth}` : '',
         sub: c.subcolumns.length > 1 ? subLabel(t.dataFormat, i) : '',
         cells,
         csvIndex: csvIndex++,
@@ -138,7 +197,7 @@ function DataSheet({
         </button>
       </div>
 
-      {showPlot ? <Preview table={t} title={sheet.title} /> : null}
+      {showPlot ? <Preview table={t} title={sheet.title} producedBy={sheet.producedBy} /> : null}
 
       {t.storage === 'offsets' ? (
         <div className="warnbox">

@@ -136,6 +136,63 @@ export interface AnalysisSheet {
   readonly results: JsonDocument | undefined
   readonly inputDataSets: readonly string[]
   readonly inputSheets: readonly string[]
+  /**
+   * The views this analysis produced, each naming the data sheet holding it.
+   *
+   * The link a results view needs in order to know what it is. A sheet called
+   * "Survival proportions" is a table of numbers until you know a SURVIVAL
+   * analysis made it; then it is a curve that has to be drawn as a staircase.
+   *
+   * `dataSheet` comes from `analyses/<id>/result_sheets/<uid>.json`, an
+   * `AnalysisView` record that points at the data sheet by uid. The uid listed
+   * in the analysis sheet is the *view's* own and matches no data sheet, so the
+   * link has to be followed rather than assumed - and the alternative, matching
+   * the composed title, is a naming convention rather than a stored fact.
+   */
+  readonly resultSheets: readonly {
+    readonly uid: string
+    readonly title: string
+    readonly dataSheet: string | undefined
+  }[]
+}
+
+/** One axis segment, as far as a chart needs it. */
+export interface AxisSegment {
+  readonly lowerLimit: number | undefined
+  readonly upperLimit: number | undefined
+  readonly interval: number | undefined
+  readonly startTicksValue: number | undefined
+  readonly categorical: boolean
+}
+
+/**
+ * A drawing on a Multiple Variables graph.
+ *
+ * `kind` is Prism's own word, taken from `gdoTypesExt.defaults`: `heatmap`,
+ * `dendrogram`, `symbols`, `confidence ellipses`. The links are JSON pointers
+ * into an analysis result, which is where a dendrogram's branches live.
+ */
+export interface MvFigure {
+  readonly kind: string
+  readonly colorScheme: string | undefined
+  readonly branchesLink: string | undefined
+  readonly clustersLink: string | undefined
+}
+
+/**
+ * A Multiple Variables graph, which is described in JSON rather than in PCFF.
+ *
+ * This is the one graph family whose appearance the file actually states. A
+ * `FENGraphSheet` keeps 250 bytes of JSON and everything else in the binary; an
+ * `MVGraph` keeps 11 to 15 KB naming its axes, limits, colour scheme, legends
+ * and figures, and three of the seven in the corpus have no binary at all.
+ */
+export interface MvGraph {
+  /** The data sheet the figures are drawn from. */
+  readonly dataSheet: string | undefined
+  readonly figures: readonly MvFigure[]
+  readonly axisX: AxisSegment | undefined
+  readonly axisY: AxisSegment | undefined
 }
 
 export interface GraphSheet {
@@ -143,10 +200,13 @@ export interface GraphSheet {
   readonly title: string | undefined
   readonly json: JsonDocument
   /**
-   * True when the graph's geometry lives in an opaque `data.bin` (the PCFF
-   * binary). We carry that blob through untouched and never try to author it.
+   * True when a `data.bin` sits beside this graph. Not the same as opaque: four
+   * of the seven MV graphs carry a binary whose magic is not `PCFFGRA4`, and
+   * their geometry is in the JSON regardless.
    */
   readonly hasBinary: boolean
+  /** Present only for a Multiple Variables graph. */
+  readonly mv: MvGraph | undefined
   readonly inputDataSets: readonly string[]
 }
 

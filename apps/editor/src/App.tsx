@@ -1,5 +1,6 @@
+import { mvContext } from '@prismbinder/charts'
 import type { Diagnostic } from '@prismbinder/core'
-import type { Sheet } from '@prismbinder/model'
+import type { Project, Sheet } from '@prismbinder/model'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { downloadBytes, type OpenDocument, saveDocument } from './document.js'
 import { canRedo, canUndo, commit, EMPTY_HISTORY, redo, type Step, undo } from './history.js'
@@ -197,6 +198,11 @@ export function App() {
     [loaded, selected],
   )
 
+  // A Multiple Variables graph points at a data sheet and at an analysis
+  // result, so it can only be drawn with the whole project in hand. Built once
+  // per document rather than per sheet change.
+  const mv = useMemo(() => mvContext(loaded?.project ?? EMPTY_PROJECT), [loaded])
+
   return (
     <div
       className={`app${dragging ? ' app--dragging' : ''}`}
@@ -277,6 +283,7 @@ export function App() {
                 sheet={sheet}
                 edits={edits}
                 onEdit={loaded.bundle !== undefined ? onEdit : undefined}
+                mv={mv}
               />
             ) : (
               <p className="muted">No sheet selected.</p>
@@ -535,4 +542,14 @@ function Failure({ failed }: { failed: Failed }) {
       </ul>
     </div>
   )
+}
+
+/** Stands in while no document is open, so the chart context is never null. */
+const EMPTY_PROJECT: Project = {
+  source: 'bundle',
+  title: undefined,
+  formatVersion: undefined,
+  minPrismVersion: undefined,
+  sheets: [],
+  notes: [],
 }

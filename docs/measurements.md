@@ -356,6 +356,110 @@ The fix for the first is to stop consulting `numberOfRows` at all: producing a r
 
 ---
 
+## M14 - charts (2026-08-12)
+
+`@prismbinder/charts` now sits between the model and both front ends, and the
+editor and `prismbinder plot` render through the same code. What it draws is in
+`docs/charts.md`; what building it taught is here.
+
+**Prism's percentile rule is the Weibull rule, `(n+1)p`.** The user guide warns
+that Prism differs from Excel and never says how. Prism's own
+`COLUMN_STATISTICS` results give quartiles for two columns of fourteen values,
+and of the five common definitions exactly one reproduces all four numbers:
+
+```
+values   1 2 4 9 24 35 45 56 67 89 111 222 345 666
+Prism    Q1  7.75    median 50.5    Q3 138.75
+(n+1)p       7.75           50.5       138.75    <- match
+(n-1)p      12.75           50.5       105.5     <- Excel PERCENTILE.INC
+```
+
+It agrees with Excel's `PERCENTILE.EXC`. The same two columns pin the standard
+deviation to the n-1 divisor, because `sd / sqrt(n)` then reproduces the stored
+`meanSE` exactly.
+
+**A Tukey whisker can end inside its own box.** No description of the rule
+mentions this and it is not obvious: the fence is built from interpolated
+hinges, so on a small skewed sample the furthest real point inside the fence can
+sit below q3. `Col. stats of Data 1` has a q3 of 499.625 whose nearest inside
+point is 107.5 - a whisker drawn there would end four hundred units inside the
+box it belongs to. Found by a property in the corpus suite rather than by
+reading. The whiskers are clamped to their hinges.
+
+**The scatter fix in M13 was half a fix.** It stopped the preview joining rows
+that are not a sequence, which removed a false trend from 141 sheets, and left
+the points where they were: strung along the row number, on tables whose rows
+are separate observations. What those tables want is one slot per column with
+that column of values stacked in it - what Prism calls a scatter dot plot.
+Removing the line was the visible half of the problem.
+
+**The oracle is still two columns wide.** Everything above about percentiles and
+standard deviations rests on one `COLUMN_STATISTICS` analysis over two columns,
+in a file that cannot be committed. That is enough to have chosen the right rule
+out of five, and would not catch a mistake on ties, on even-length samples, or
+on a column holding a single value. Widening it needs a few minutes in Prism.
+
+## M15 - auditing every chart (2026-08-12) fixed
+
+M14 checked the default style of each sheet. This planned **every style the
+picker offers, for every sheet, in every document on this machine** - 1,101
+charts - rendered each at 680x340 and checked the spec and the finished
+document. Five defects, none of which the default-style suite could see.
+
+**Half the corpus drew nothing.** Prism writes cells in the locale the document
+was saved in, and **36 of the 71 documents store `82,90279` where the others
+store `82.90279`**. `Number` refuses those, so every value was dropped in
+silence: `Volcano plot.pzt` holds 480 non-empty cells and produced a blank
+picture in all seven styles offered for it. 83 charts were empty for this reason
+alone.
+
+The reading was measured before it was adopted, over all **86,665** cells:
+
+| Question | Answer |
+|---|---|
+| Does any document mix `1,5` and `1.5`? | **No. Zero files.** The separator is a property of the document |
+| Is a comma ever a thousands separator? | **No.** 82 cells are shaped like one (`117,114`, `-1,962`) and every one sits in a document that is comma-decimal elsewhere. None appears in a dot-decimal file |
+| Does it swallow text? | No. `Mecca, Saudi Arabia` fails the shape `-?\d+,\d+` without needing to be recognised as a name |
+
+The second row follows from `%.18g`: stored numbers are never grouped, because
+grouping is a display setting and does not reach a file.
+
+**Tied points escaped their column.** An aligned dot plot nudges equal values
+apart by a fixed step, which is fine for ten and ruinous for seventy: the
+survival table's Event column is 135 zeroes and ones, and its points ran from
+`0.44` to `6.56` on an axis ending at `4` - into the neighbouring columns and off
+the chart. **5,132 points were outside their own axes.** The widest tie group is
+now measured first and the step shrunk to fit, so small stacks look unchanged.
+
+**Dates and elapsed times in X drew nothing.** Prism offers both as X axis kinds
+and three sample documents use them - `9:00:00.000` through `30:00:00.000`, and
+`13-Jul-2013`. Neither parses as a number, so every row was skipped for want of
+an X. Durations now read as hours; dates read as days from the earliest in the
+column, with the origin named in the axis title, which keeps the uneven spacing
+that is the whole reason a date axis is not a category axis.
+
+**A before-after plot explained the wrong thing.** It colours one line per row
+and the key named the three columns, so twelve of fifteen colours had no entry.
+
+**The key ran off the page.** Entries were placed left to right with no bound;
+`Gene Expression` put a swatch at x=694 on a 680-wide page. What no longer fits
+is now counted, not dropped in silence.
+
+Two findings were the audit's own fault and are worth recording as such: reading
+every number in a path `d` attribute as a coordinate pair misreads the seven
+numbers of an elliptical arc and reported every pie as off the page, and looking
+a sheet up by title picks the wrong one in `MV- Simple Nonlinear Regression`,
+which holds two sheets of the same name. A harness is not evidence until it has
+been seen to fail for the right reason - all five real defects were re-introduced
+one at a time and confirmed to fail the suite that now guards them.
+
+**What was not a defect.** Box and violin refuse a column of fewer than four
+values, as Prism does, and say so in a note on the chart.
+
+---
+
+---
+
 ## Outstanding - requires the Prism GUI
 
 | ID | Content | Status |
@@ -366,3 +470,4 @@ The fix for the first is to stop consulting `numberOfRows` at all: producing a r
 | P2 | Four before/after mutation pairs (makes T2 non-circular) | waiting |
 | ~~P3~~ | Unobserved `dataFormat` values (`y_cv`, `y_cv_n`, `y_sd_n`, `y_se_n`, `y_se`) | **resolved by M11 and M12.** All five appear in the widened corpus, the subcolumn counts match on 95/95 tables, and `y_cv*` is settled |
 | P4 | Does Prism open a `.pzfx` we wrote? | waiting. The output is now schema-conformant, which is necessary and not sufficient |
+| P5 | Widen the descriptive-statistics oracle | **largely answered without Prism.** numpy spells Prism's percentile rule `method="weibull"` and reproduces all three stored quartiles exactly, so `summary.oracle.node.test.ts` now checks a few hundred generated samples - ties, even lengths, single values, twelve orders of magnitude - against numpy, scipy and statsmodels. Running Column Statistics in Prism over awkward columns would still tie the rule to Prism directly rather than through numpy |

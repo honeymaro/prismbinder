@@ -30,6 +30,7 @@ const alias = {
   '@prismbinder/core': src('core'),
   '@prismbinder/formats': src('formats'),
   '@prismbinder/model': src('model'),
+  '@prismbinder/charts': src('charts'),
 }
 
 export default defineConfig({

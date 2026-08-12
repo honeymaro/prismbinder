@@ -7,6 +7,7 @@ export {
   type DataSheetView,
   type GraphSheetView,
   type InfoSheetView,
+  type MvGraphView,
   marksFor,
   NO_MARKS,
   numericCell,
