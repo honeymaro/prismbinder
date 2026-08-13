@@ -223,8 +223,14 @@ export function pcffAxes(bytes: Uint8Array): PcffAxis[] {
  *
  * There is no graph-type field in the header - bytes 8 to 32 are identical
  * across all 70 PCFF blobs on this machine, from both file generations - but
- * there is one inside a chunk. Every blob carries exactly one 0x0013 chunk and
- * the byte at +14 varies with what the graph is.
+ * there is one inside a chunk: the byte at +14 of a 0x0013 chunk varies with
+ * what the graph is.
+ *
+ * **A blob does not always hold exactly one.** Each of the 19 bundle blobs
+ * does, which is why this returns the first and why that is right for them.
+ * The 51 blobs stored as `<Template>` cover a whole document at once: 36 hold
+ * one, 12 hold between two and thirteen, and 3 hold none. So this answers for
+ * the first graph in a blob, which is the only graph in every bundle.
  *
  * **It is the graph's kind, not the table's.** That is the reading worth
  * establishing, and the shipped documents establish it: a `OneWay` column table
@@ -233,7 +239,7 @@ export function pcffAxes(bytes: Uint8Array): PcffAxis[] {
  * | Value | Documents drawn that way |
  * |---|---|
  * | 0 | 21 XY documents, plus Bland-Altman, Spaghetti plot, Insert a picture |
- * | 1 | Pie chart, Donut plot, Percentage dot plot, Bubble Plot, Rainbow scatter, Points and grouped bars |
+ * | 1 | Pie chart, Donut plot, Percentage dot plot, Bubble Plot, Rainbow scatter, Points and grouped bars, Cox Sample Data |
  * | 2 | Bars extending left and right, Population pyramid, Odds ratio (Forest plot) |
  * | 3 | Column scatter, Line between groups, QC graph, Scatter plot with bars |
  * | 4 | Box and whiskers graph, Box and whiskers with asterisks |
@@ -246,10 +252,27 @@ export function pcffAxes(bytes: Uint8Array): PcffAxis[] {
  * documents that agree with each other, and all three of value 2 are horizontal
  * bar charts.
  *
- * **Value 1 is not understood** and is deliberately left unmapped by callers.
- * It covers pie and donut charts alongside grouped bars and a bubble plot, and
- * no reading of that set has been checked. Values above 8 have never been seen,
- * so nothing is known about survival, contingency or nested graphs.
+ * **Value 1 is a family, not a type**, and is deliberately left unmapped by
+ * callers. It covers pie, donut, percentage dot plot, bubble plot, rainbow
+ * scatter, grouped bars and Cox. A second field narrows it: byte +29 of the
+ * same chunk is a flags byte, and its bit 0x08 is set on exactly the three
+ * parts-of-whole documents in the corpus and nowhere else among the 97 chunks
+ * that carry one.
+ * Two more bytes are copies: +38 repeats this one in all 97 chunks without
+ * exception, and +40 does too apart from six chunks that read 12 while +14
+ * reads 1 - two in `Bubble Plot.pzt` and four in `Cox Sample Data.pzfx`. What
+ * those two have in common is not known.
+ *
+ * None of that is mapped, because none of it would change a chart. The
+ * parts-of-whole tables already declare themselves as such and already get a
+ * pie; the bit cannot tell a pie from the percentage dot plot that shares it;
+ * and 12 for a bubble plot would select a chart kind this project has no
+ * builder for, so it would draw nothing where it now draws a scatter. What
+ * separates a pie from a percentage dot plot, or a rainbow scatter from
+ * grouped bars, needs more documents than the one apiece the corpus holds.
+ *
+ * Values above 8 have never been seen, so nothing is known about survival,
+ * contingency or nested graphs.
  */
 export function pcffGraphType(bytes: Uint8Array): number | undefined {
   let found: number | undefined

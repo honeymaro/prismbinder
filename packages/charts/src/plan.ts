@@ -83,10 +83,13 @@ export interface PlanOptions {
  *   5  `Adjust spacing between bars`, `Grouped graph spacing`
  *   0  twenty-one XY documents
  *
- * **1 is missing on purpose.** It covers pie and donut charts alongside grouped
- * bars and a bubble plot, and no reading of that set has been checked. A value
- * that is not here leaves the choice where it was, which is our own judgement
- * from the table's shape.
+ * **1 is missing on purpose.** It is a family rather than a type - pie, donut,
+ * percentage dot plot, bubble plot, rainbow scatter, grouped bars, Cox - and while a
+ * flags byte beside it does mark the parts-of-whole members, mapping that would
+ * change nothing: those tables already declare themselves and already get a
+ * pie, and the flag cannot tell a pie from the percentage dot plot sharing it.
+ * See `pcffGraphType` for what was measured. A value that is not here leaves
+ * the choice where it was, which is our own judgement from the table's shape.
  */
 const KIND_DRAWN: Readonly<Record<number, ChartKind>> = {
   0: 'xy',

@@ -19,12 +19,15 @@ reads their neighbours as a length and lands nowhere.
 Run:  python tools/pcff/walk.py [--tags] [path-to-prism-installation]
 """
 
+import base64
 import glob
 import json
 import os
+import re
 import struct
 import sys
 import zipfile
+import zlib
 from collections import Counter
 
 MAGIC = b"PCFFGRA4"
@@ -57,34 +60,77 @@ def chunks(b, start):
 
 
 def first_chunk(b):
-    """Where the chunk stream starts, which is the uid chunk the writer emits."""
-    i = b.find(b"\x15\x20")
-    return i if i >= 0 else None
+    """
+    Where the chunk stream starts: immediately after the magic.
+
+    Found by trying every offset and keeping the ones that consume the blob
+    exactly. Offset 8 is the only one that does, and it does for all 70 blobs.
+    An earlier version searched for the uid chunk instead, which worked on
+    bundles by luck - it landed on a chunk boundary while skipping the first
+    three - and found nothing at all in a `<Template>`, which has no uid.
+    """
+    return 8 if b[:8] == MAGIC else None
 
 
-def graph_blobs(root):
-    """Every graph binary in every bundle under `root`, with its sheet title."""
+TEMPLATE = re.compile(r"<Template[^>]*>(.*?)</Template>", re.S)
+
+
+def graph_blobs(root, bundles_only=False):
+    """
+    Every graph binary under `root`, with the title of the sheet holding it.
+
+    Two places keep them, and a claim about "the corpus" that only counts one
+    of them is a claim about a quarter of it. Third-generation bundles store a
+    blob per graph sheet at `graphs/<uid>/data.bin`; second-generation XML
+    documents store one per document, base64 then zlib inside `<Template>`.
+    Both are the same format and the same walk reads both, which is itself
+    worth knowing: 19 blobs come from bundles and 51 from XML.
+
+    A template carries no sheet title of its own - the title lives in the XML
+    around it - so those are reported by file name and index.
+    """
     for path in glob.glob(os.path.join(root, "**", "*"), recursive=True):
         if not os.path.isfile(path):
             continue
         try:
-            z = zipfile.ZipFile(path)
-            names = z.namelist()
+            raw = open(path, "rb").read()
+        except OSError:
+            continue
+
+        if raw[:4] == b"PK":
+            try:
+                z = zipfile.ZipFile(path)
+                names = z.namelist()
+            except Exception:
+                continue
+            if "document.json" not in names:
+                continue
+            for n in names:
+                if not (n.startswith("graphs/") and n.endswith("sheet.json")):
+                    continue
+                data = n.rsplit("/", 1)[0] + "/data.bin"
+                if data not in names:
+                    continue
+                blob = z.read(data)
+                if blob[:8] != MAGIC:
+                    continue
+                sheet = json.loads(z.read(n))
+                yield os.path.basename(path), sheet.get("title", ""), blob
+            continue
+
+        if bundles_only or raw[:2] != b"<?":
+            continue
+        try:
+            text = raw.decode("utf8", "replace")
         except Exception:
             continue
-        if "document.json" not in names:
-            continue
-        for n in names:
-            if not (n.startswith("graphs/") and n.endswith("sheet.json")):
+        for i, m in enumerate(TEMPLATE.finditer(text)):
+            try:
+                blob = zlib.decompress(base64.b64decode(re.sub(r"\s", "", m.group(1))))
+            except Exception:
                 continue
-            data = n.rsplit("/", 1)[0] + "/data.bin"
-            if data not in names:
-                continue
-            blob = z.read(data)
-            if blob[:8] != MAGIC:
-                continue
-            sheet = json.loads(z.read(n))
-            yield os.path.basename(path), sheet.get("title", ""), blob
+            if blob[:8] == MAGIC:
+                yield os.path.basename(path), f"<Template> {i}", blob
 
 
 def main():

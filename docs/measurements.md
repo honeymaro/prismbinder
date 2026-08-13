@@ -548,7 +548,7 @@ samples are one graph each and named after the graph they demonstrate:
 | Value | Documents drawn that way |
 |---|---|
 | 0 | 21 XY documents, plus Bland-Altman, Spaghetti plot, Insert a picture |
-| 1 | Pie chart, Donut plot, Percentage dot plot, Bubble Plot, Rainbow scatter, Points and grouped bars |
+| 1 | Pie chart, Donut plot, Percentage dot plot, Bubble Plot, Rainbow scatter, Points and grouped bars, Cox Sample Data |
 | 2 | Bars extending left and right, Population pyramid, Odds ratio (Forest plot) |
 | 3 | Column scatter, Line between groups, QC graph, Scatter plot with bars |
 | 4 | Box and whiskers graph, Box and whiskers with asterisks |
@@ -556,14 +556,60 @@ samples are one graph each and named after the graph they demonstrate:
 | 8 | Before-after, Before-after with error, a paired t test estimation plot |
 
 Every value except 1 is drawn by documents that agree with each other, and all
-three of value 2 are horizontal. **Value 1 is not understood** - it covers pie
-and donut charts alongside grouped bars and a bubble plot - and is deliberately
-left unmapped, so a table carrying it gets the chart it would have got with no
-graph at all. Values above 8 have never been seen, so survival, contingency and
-nested graphs remain unknown.
+three of value 2 are horizontal. Values above 8 have never been seen, so
+survival, contingency and nested graphs remain unknown.
 
-Four charts in the corpus now change because of this, each one a case the table
-could not have settled:
+### Value 1 is a family, not a type
+
+It covers pie, donut, percentage dot plot, bubble plot, rainbow scatter, grouped
+bars and Cox. A second field narrows it: **byte +29 of the same chunk is a flags
+byte.**
+
+| `+14` | `+29` | Documents |
+|---|---|---|
+| 1 | **0x18** | Pie chart, Donut plot, Percentage dot plot |
+| 1 | 0x04 | Points and grouped bars, two of the three ANOVA grouped graphs |
+| 1 | 0x00 | Bubble Plot, Rainbow scatter, the third ANOVA grouped graph |
+| 1 | 0x02 | Cox Sample Data |
+| 2 | 0x80 | all four horizontal bar charts |
+| 4 | 0x80 or 0x00 | the two box-plot documents, which differ despite being the same kind |
+
+**Bit 0x08 is set on exactly the three parts-of-whole documents and nowhere
+else.** The denominator is worth stating: of the 70 blobs, 67 carry a 0x0013
+chunk at all and they carry 97 between them, because a `<Template>` covers a
+whole document and one holds thirteen.
+
+Two further bytes are copies. **+38 repeats +14 in all 97 chunks without
+exception.** +40 does too apart from six chunks that read 12 while +14 reads 1:
+two in `Bubble Plot.pzt` and four in `Cox Sample Data.pzfx`. An earlier version
+of this section said "except on the bubble plot", which was measured over a
+labelled subset of twenty-one and stated as though it held everywhere. What the
+bubble plot and Cox have in common is not known.
+
+**None of this is mapped, because none of it would change a chart.** Measured:
+
+| Document | Table | Drawn as |
+|---|---|---|
+| Pie chart, Donut plot, Percentage dot plot | `partsofwhole` | already a pie |
+| Bubble Plot | `multivariable` | scatter |
+| Rainbow scatter | `grouped` | bar |
+
+The parts-of-whole tables already declare themselves and already get a pie, and
+the flag cannot tell a pie from the percentage dot plot that shares it. The
+bubble plot's 12 would select a chart kind this project has no builder for, so
+it would draw nothing where it now draws a scatter. Only the rainbow scatter
+would genuinely change, and value 1 cannot say "scatter" when grouped bars carry
+it too.
+
+What separates a pie from a percentage dot plot, or a rainbow scatter from
+grouped bars, needs more documents than the one apiece the corpus holds. A
+handful of `.prism` files containing pie charts would settle the remaining bits
+of +29 and +40.
+
+### What reading the graph kind changed
+
+Four charts in the corpus change because the kind is readable at all, and none
+of them is a kind 1. Each is a case the table could not have settled:
 
 | Sheet | Was | Now |
 |---|---|---|
