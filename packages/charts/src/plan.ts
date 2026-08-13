@@ -1,4 +1,4 @@
-import type { Project, TableView } from '@prismbinder/model'
+import type { GraphAxis, Project, TableView } from '@prismbinder/model'
 import { num, readTable, type Series, type TableSeries } from './series.js'
 import {
   density,
@@ -51,6 +51,66 @@ export interface PlanOptions {
   readonly horizontal?: boolean
   /** Interleaved is Prism's own wording for bars side by side within a slot. */
   readonly stacked?: boolean
+  /**
+   * The axes Prism drew for this table, read out of its graph binary.
+   *
+   * Used only where an axis can be matched to what is being plotted, by its
+   * recorded data range. The order of the three is not reliable - a column
+   * scatter puts the categories first - so position is never trusted, and an
+   * axis that matches nothing is ignored rather than applied to whichever slot
+   * came up.
+   */
+  readonly graphAxes?: readonly GraphAxis[]
+  /**
+   * The kind of graph Prism drew from this table, as the file numbers them.
+   *
+   * Only the values whose meaning is established get used; see `KIND_DRAWN`.
+   */
+  readonly graphType?: number
+}
+
+/**
+ * What Prism's graph-kind numbers mean, where the shipped documents say so.
+ *
+ * GraphPad's Portfolio samples are one graph each and named after the graph
+ * they demonstrate, which turns the number into a name. Every entry below is
+ * backed by documents that agree with each other:
+ *
+ *   4  `Box and whiskers graph`, `Box and whiskers with asterisks`
+ *   8  `Before-after`, `Before-after with error`, a paired t test estimation plot
+ *   3  `Column scatter`, `Line between groups`, `QC graph`, `Scatter plot with bars`
+ *   2  `Bars extending left and right`, `Population pyramid`, `Odds ratio (Forest plot)` - all horizontal
+ *   5  `Adjust spacing between bars`, `Grouped graph spacing`
+ *   0  twenty-one XY documents
+ *
+ * **1 is missing on purpose.** It covers pie and donut charts alongside grouped
+ * bars and a bubble plot, and no reading of that set has been checked. A value
+ * that is not here leaves the choice where it was, which is our own judgement
+ * from the table's shape.
+ */
+const KIND_DRAWN: Readonly<Record<number, ChartKind>> = {
+  0: 'xy',
+  2: 'bar',
+  3: 'scatter',
+  4: 'box',
+  5: 'bar',
+  8: 'beforeAfter',
+}
+
+/** Prism draws graph kind 2 lying on its side. */
+const DRAWN_HORIZONTAL = new Set([2])
+
+/**
+ * Whether Prism drew this graph on its side.
+ *
+ * Exported because the editor keeps the orientation in its own state and seeds
+ * it from here, the way it seeds the chart kind from `defaultKind`. Deriving it
+ * inside `planChart` only when no kind was passed made it unreachable: the
+ * editor always passes one, so a forest plot came out standing up while the
+ * test that covered it called `planChart` in a shape the editor never uses.
+ */
+export function defaultHorizontal(graphType?: number): boolean {
+  return graphType !== undefined && DRAWN_HORIZONTAL.has(graphType)
 }
 
 /** The charts that put every repeat on the page rather than summarising them. */
@@ -74,8 +134,17 @@ function hasReplicates(table: TableView): boolean {
  * with no line at all. What wrote a sheet is the only thing that says what its
  * numbers mean.
  */
-export function defaultKind(table: TableView, producedBy?: Provenance): ChartKind {
+export function defaultKind(
+  table: TableView,
+  producedBy?: Provenance,
+  graphType?: number,
+): ChartKind {
   if (isSurvivalCurve(producedBy)) return 'survival'
+  // What Prism drew beats what the layout suggests. A column table can be a
+  // scatter, a box plot, a before-after plot or a bar chart, and the table
+  // cannot say which of those someone chose; the graph can.
+  const drawn = graphType === undefined ? undefined : KIND_DRAWN[graphType]
+  if (drawn !== undefined && allowedKinds(table, producedBy).includes(drawn)) return drawn
   const hasX = table.columns.some((c) => c.role === 'x')
   switch (table.tableFormat) {
     case 'xy':
@@ -158,7 +227,7 @@ function hasPlottableValues(table: TableView): boolean {
 
 export function planChart(table: TableView, title: string, opts: PlanOptions = {}): ChartSpec {
   const read = readTable(table)
-  const kind = opts.kind ?? defaultKind(table, opts.producedBy)
+  const kind = opts.kind ?? defaultKind(table, opts.producedBy, opts.graphType)
   const notes: string[] = []
 
   if (read.usedRowIndex && kind === 'xy') {
@@ -195,6 +264,11 @@ export function planChart(table: TableView, title: string, opts: PlanOptions = {
       `These are the survival proportions the analysis computed, so the line holds its value between events rather than sloping between them. Nothing here was recalculated.`,
     )
   }
+  if (opts.graphAxes !== undefined) {
+    notes.push(
+      'The axis range and scale are the ones Prism drew, read from the graph. The marks are still ours.',
+    )
+  }
   if (table.storage === 'unknown' && read.series.some((s) => s.data.length > 0)) {
     notes.push(
       'The meaning of the extra subcolumns in this table has never been observed, so only the first is plotted.',
@@ -209,12 +283,13 @@ export function planChart(table: TableView, title: string, opts: PlanOptions = {
     kind: built.marks.length === 0 ? 'empty' : kind,
     title,
     fidelity: 'reconstructed',
-    axisX: built.axisX,
-    axisY: built.axisY,
+    axisX: withDrawnAxis(built.axisX, opts.graphAxes),
+    axisY: withDrawnAxis(built.axisY, opts.graphAxes),
     series,
     marks: built.marks,
     notes: [...notes, ...built.notes],
-    horizontal: opts.horizontal === true,
+    // The caller's choice wins when it made one; otherwise the file's.
+    horizontal: opts.horizontal ?? defaultHorizontal(opts.graphType),
   }
 }
 
@@ -959,6 +1034,43 @@ function storedSurvival(read: TableSeries, opts: PlanOptions): Built {
 
 // ---------------------------------------------------------------------- axes
 
+/**
+ * Replaces an axis we derived with the one Prism actually drew.
+ *
+ * Matched on the data range rather than on position. The graph binary records,
+ * per axis, both the bounds drawn and the extent of what was plotted on it; the
+ * second is the same number this planner computes from the table, so an axis
+ * can be recognised by it. That matters because the order of the three stored
+ * axes is not dependable - a column scatter writes the category axis where an
+ * XY plot writes the value axis - and applying the wrong one would move every
+ * point on the chart.
+ *
+ * A category axis is left alone: its bounds are slot indices, and nothing in
+ * the binary describes them in those terms.
+ */
+function withDrawnAxis(axis: Axis, axes: readonly GraphAxis[] | undefined): Axis {
+  if (axes === undefined || axis.kind === 'category') return axis
+  if (!Number.isFinite(axis.min) || !Number.isFinite(axis.max)) return axis
+  const span = Math.abs(axis.max - axis.min)
+  const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(span, Math.abs(b), 1) * 1e-6
+  const drawn = axes.find(
+    (a) =>
+      // An axis with nothing on it is Prism's placeholder for a second Y
+      // nobody used, and it records a data range of zero to zero. A column of
+      // all zeroes has that range too, so without this the placeholder's
+      // bounds would be adopted onto real data and the chart would draw an
+      // axis the values do not reach.
+      a.dataMin !== a.dataMax &&
+      near(a.dataMin, axis.min) &&
+      near(a.dataMax, axis.max) &&
+      a.max > a.min,
+  )
+  if (drawn === undefined) return axis
+  // A log axis cannot start at or below zero whatever the file says.
+  const log = drawn.log && drawn.min > 0
+  return { ...axis, kind: log ? 'log' : 'linear', min: drawn.min, max: drawn.max }
+}
+
 function numericAxis(title: string, lo: number, hi: number, log: boolean | undefined): Axis {
   const usable = Number.isFinite(lo) && Number.isFinite(hi)
   return {
@@ -1022,10 +1134,23 @@ export function planProject(project: Project, opts: PlanOptions = {}): ChartSpec
 }
 
 /** Spread into the options so an explicit caller choice still wins. */
-export function provenanceOf(sheet: { producedBy?: Provenance | undefined }): {
-  producedBy?: Provenance
-} {
-  return sheet.producedBy === undefined ? {} : { producedBy: sheet.producedBy }
+/**
+ * What a sheet knows about itself, as plan options.
+ *
+ * Both halves come from the file: what analysis produced the table, and what
+ * axes Prism drew from it. Callers pass this rather than assembling it, so a
+ * new source of stated fact reaches every chart at once.
+ */
+export function provenanceOf(sheet: {
+  producedBy?: Provenance | undefined
+  graphAxes?: readonly GraphAxis[] | undefined
+  graphType?: number | undefined
+}): PlanOptions {
+  return {
+    ...(sheet.producedBy === undefined ? {} : { producedBy: sheet.producedBy }),
+    ...(sheet.graphAxes === undefined ? {} : { graphAxes: sheet.graphAxes }),
+    ...(sheet.graphType === undefined ? {} : { graphType: sheet.graphType }),
+  }
 }
 
 export type { Series, TableSeries }

@@ -15,12 +15,34 @@ import {
 } from '@prismbinder/formats'
 import {
   type ColumnView,
+  type GraphAxis,
   NO_MARKS,
   type Project,
   type Sheet,
   type SubcolumnMarks,
   type TableView,
 } from './types.js'
+
+/**
+ * Whether two graphs drew the same axes.
+ *
+ * Only the drawn bounds and the scale, not the recorded data extent: that pair
+ * exists so a chart can work out which of the three stored axes matches what it
+ * is plotting, and two graphs of the same data can record different extents
+ * while drawing the same picture.
+ *
+ * Compared by position, which the reader elsewhere warns is not dependable
+ * across differently drawn graphs. It is safe here only because the caller
+ * checks the graph kind alongside, and a graph that reorders its axes is a
+ * different kind. Do not separate the two checks.
+ */
+function sameAxes(a: readonly GraphAxis[], b: readonly GraphAxis[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((x, i) => {
+    const y = b[i] as GraphAxis
+    return x.min === y.min && x.max === y.max && x.log === y.log
+  })
+}
 
 /** Sniffs the container and builds a format-neutral view. */
 export function readProject(bytes: Uint8Array, path = ''): ParseResult<Project | undefined> {
@@ -51,6 +73,7 @@ export function fromBundle(bundle: PrismBundle): Project {
   const notes: string[] = []
   const sheets: Sheet[] = []
   const generatedX: string[] = []
+  const disputed: string[] = []
 
   // Which analysis produced which results view. Prism writes those views as
   // ordinary data sheets, so without this link a computed survival curve is
@@ -63,6 +86,43 @@ export function fromBundle(bundle: PrismBundle): Project {
       // which matches nothing.
       if (r.dataSheet === undefined) continue
       producedBy.set(r.dataSheet, { analysisClass: a.analysisClass, sheetTitle: r.title })
+    }
+  }
+
+  // Which graph draws which datasets. A graph sheet names the datasets it
+  // plots, and its binary states the axes Prism drew them on, so a chart of
+  // the data sheet holding those datasets can use the real range and scale
+  // rather than bounds worked out from the numbers.
+  // **Only where the graphs agree.** A dataset can be plotted by several
+  // graphs and they need not say the same thing: `Geometric mean.pzt` draws the
+  // same two datasets once linearly and once logarithmically, and
+  // `Time line.pzt` draws fourteen of them whole and again zoomed to a segment.
+  // Keeping whichever graph the archive happened to list first picked one of
+  // those answers by entry order and then told the reader, on the chart, that
+  // the axis was the one Prism drew. It is not, when Prism drew two. Where they
+  // disagree the sheet gets no stated axis at all and says why.
+  const axesFor = new Map<string, readonly GraphAxis[]>()
+  const kindFor = new Map<string, number>()
+  const contested = new Set<string>()
+  for (const g of bundle.graphs) {
+    for (const uid of g.inputDataSets) {
+      if (contested.has(uid)) continue
+      const heldAxes = axesFor.get(uid)
+      const heldKind = kindFor.get(uid)
+      // A graph with nothing to say is not a second opinion. Treating silence
+      // as disagreement would let a graph whose binary is absent or unreadable
+      // throw away a real reading from the graph beside it.
+      const disagrees =
+        (heldAxes !== undefined && g.axes !== undefined && !sameAxes(heldAxes, g.axes)) ||
+        (heldKind !== undefined && g.graphType !== undefined && heldKind !== g.graphType)
+      if (disagrees) {
+        axesFor.delete(uid)
+        kindFor.delete(uid)
+        contested.add(uid)
+        continue
+      }
+      if (heldAxes === undefined && g.axes !== undefined) axesFor.set(uid, g.axes)
+      if (heldKind === undefined && g.graphType !== undefined) kindFor.set(uid, g.graphType)
     }
   }
 
@@ -151,12 +211,20 @@ export function fromBundle(bundle: PrismBundle): Project {
       storage: storageSemantics(t.dataFormat),
     }
 
+    // Matched on the datasets, because a graph names those rather than the
+    // sheet. Any column of this table being plotted is enough.
+    const drawn = columns.map((c) => axesFor.get(c.id)).find((a) => a !== undefined)
+    const drawnAs = columns.map((c) => kindFor.get(c.id)).find((k) => k !== undefined)
+    if (columns.some((c) => contested.has(c.id))) disputed.push(s.title ?? s.uid)
+
     sheets.push({
       kind: 'data',
       id: s.uid,
       title: s.title ?? 'Data',
       table,
       producedBy: producedBy.get(s.uid),
+      ...(drawn === undefined ? {} : { graphAxes: drawn }),
+      ...(drawnAs === undefined ? {} : { graphType: drawnAs }),
     })
   }
 
@@ -178,6 +246,9 @@ export function fromBundle(bundle: PrismBundle): Project {
       title: g.title ?? 'Graph',
       // A graph that describes itself is not opaque, whatever sits beside it.
       opaque: g.hasBinary && g.mv === undefined,
+      ...(g.axes === undefined ? {} : { axes: g.axes }),
+      ...(g.graphType === undefined ? {} : { graphType: g.graphType }),
+      inputDataSets: g.inputDataSets,
       mv:
         g.mv === undefined
           ? undefined
@@ -216,6 +287,11 @@ export function fromBundle(bundle: PrismBundle): Project {
   if (generatedX.length > 0) {
     notes.push(
       `X values were computed from a start value and an interval in ${generatedX.length} sheet(s) (${generatedX.join(', ')}); the file stores no X column for them`,
+    )
+  }
+  if (disputed.length > 0) {
+    notes.push(
+      `${disputed.length} sheet(s) (${disputed.join(', ')}) are drawn by more than one graph and those graphs disagree, so no stated axis range or graph kind is used for them`,
     )
   }
 

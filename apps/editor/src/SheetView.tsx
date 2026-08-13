@@ -1,6 +1,6 @@
-import { type MvContext, planMvGraph } from '@prismbinder/charts'
+import { type MvContext, planGraphSheet, planMvGraph } from '@prismbinder/charts'
 import type { GraphSheetView, Sheet } from '@prismbinder/model'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ChartFigure } from './ChartFigure.js'
 import { DataGrid, type GridColumn } from './DataGrid.js'
 import type { EditMap } from './document.js'
@@ -85,11 +85,14 @@ export function SheetView({ sheet, edits, onEdit, mv }: SheetViewProps) {
  * dendrogram's branches - so it is drawn, and drawn without the reconstructed
  * badge, because it is not a reconstruction.
  *
- * Every other family keeps all of that in the legacy binary. There is nothing
- * to draw, and half-drawing it would be worse than saying so.
+ * Every other family keeps its appearance in the legacy binary. That blob is
+ * not decoded, but it is framed, and three of its facts are legible: the
+ * datasets plotted, the range and scale of each axis, and the kind of graph.
+ * Those are drawn, badged as a reconstruction, because the marks are still
+ * ours. Only a graph that names no data it can find is left as a placeholder.
  */
 function GraphSheet({ sheet, mv }: { sheet: GraphSheetView; mv: MvContext }) {
-  const spec = planMvGraph(sheet, mv)
+  const spec = useMemo(() => planMvGraph(sheet, mv), [sheet, mv])
 
   if (spec !== undefined && spec.marks.length > 0) {
     return (
@@ -116,6 +119,46 @@ function GraphSheet({ sheet, mv }: { sheet: GraphSheetView; mv: MvContext }) {
     )
   }
 
+  // The legacy binary does not describe its own appearance, but it does say
+  // which datasets are plotted, the range and scale of each axis, and what kind
+  // of graph it is. That is enough to draw, and a great deal more use than a
+  // paragraph explaining that it is not being drawn.
+  const rebuilt = useMemo(() => planGraphSheet(sheet, mv), [sheet, mv])
+  if (rebuilt !== undefined) {
+    // Only what the file actually states. Four graph sheets in the corpus reach
+    // here with neither axes nor a kind - Multiple Variables figures this
+    // project cannot draw, resolved through their data sheet - and telling a
+    // reader those axes were Prism's would be untrue of exactly the sheets
+    // where nothing was read.
+    const stated = [
+      sheet.axes === undefined ? undefined : 'the axis range and scale',
+      sheet.graphType === undefined ? undefined : 'the kind of graph',
+    ].filter((s): s is string => s !== undefined)
+    return (
+      <div className="panel">
+        <h2>{sheet.title}</h2>
+        <div className="preview">
+          <div className="preview__head">
+            <span className="badge badge--warn" title="Drawn from the data, not from Prism's graph">
+              reconstructed
+            </span>
+            <span className="muted small">
+              {stated.length === 0
+                ? 'Drawn from the data this graph names. Nothing about its appearance was read: that lives in a binary this project does not decode, and everything you see here is ours.'
+                : `${stated.join(' and ')} ${stated.length > 1 ? 'are' : 'is'} the one${stated.length > 1 ? 's' : ''} Prism recorded. The symbols, colours and spacing are ours, and the rest of the graph's geometry is a binary this project does not decode.`}
+            </span>
+          </div>
+          <ChartFigure spec={rebuilt} />
+          {rebuilt.notes.map((note) => (
+            <p className="muted small" key={note}>
+              {note}
+            </p>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="panel">
       <h2>{sheet.title}</h2>
@@ -124,11 +167,12 @@ function GraphSheet({ sheet, mv }: { sheet: GraphSheetView; mv: MvContext }) {
           <strong>Not rendered.</strong>
           <p>
             This graph's geometry lives in Prism's legacy binary format, which prismbinder carries
-            through untouched but does not decode. Reproducing it would mean decoding hundreds of
-            structure fields, and a graph drawn from a partial understanding would be worse than
-            none.
+            through untouched. Enough of it is legible to draw a chart wherever the graph names the
+            data it plots, but this one does not, or its table is not in the document.
           </p>
-          <p className="muted">The underlying data is available on its data sheet.</p>
+          <p className="muted">
+            The underlying data is available on its data sheet, where "Plot the data" draws it.
+          </p>
         </div>
       ) : (
         <div className="placeholder">
@@ -197,7 +241,19 @@ function DataSheet({
         </button>
       </div>
 
-      {showPlot ? <Preview table={t} title={sheet.title} producedBy={sheet.producedBy} /> : null}
+      {showPlot ? (
+        <Preview
+          // Keyed, like the grid and the results view. Without it React reuses
+          // the instance across a sheet change and the chart kind, orientation
+          // and whisker rule seeded from one sheet's graph carry to the next.
+          key={sheet.id}
+          table={t}
+          title={sheet.title}
+          producedBy={sheet.producedBy}
+          graphAxes={sheet.graphAxes}
+          graphType={sheet.graphType}
+        />
+      ) : null}
 
       {t.storage === 'offsets' ? (
         <div className="warnbox">

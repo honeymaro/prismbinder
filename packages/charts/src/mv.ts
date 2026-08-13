@@ -1,4 +1,5 @@
 import type { GraphSheetView, Project, TableView } from '@prismbinder/model'
+import { planChart } from './plan.js'
 import { num } from './series.js'
 import type { Axis, ChartSpec, Link, Mark, SeriesInfo } from './types.js'
 
@@ -31,6 +32,13 @@ export interface MvContext {
   readonly tables: ReadonlyMap<string, { title: string; table: TableView }>
   /** Resolves a link such as `/rows/dendrogram` to a stored linkage list. */
   readonly linkage: (pointer: string) => readonly Linkage[] | undefined
+  /**
+   * The table holding a dataset, by the dataset's uid.
+   *
+   * A graph names the datasets it plots, never the sheet they live on, so
+   * without this a graph sheet cannot find its own numbers.
+   */
+  readonly tableForDataSet: (uid: string) => { title: string; table: TableView } | undefined
 }
 
 export function mvContext(project: Project): MvContext {
@@ -39,10 +47,19 @@ export function mvContext(project: Project): MvContext {
     if (s.kind === 'data') tables.set(s.id, { title: s.title, table: s.table })
   }
 
+  const byDataSet = new Map<string, { title: string; table: TableView }>()
+  for (const s of project.sheets) {
+    if (s.kind !== 'data') continue
+    for (const c of s.table.columns) {
+      if (!byDataSet.has(c.id)) byDataSet.set(c.id, { title: s.title, table: s.table })
+    }
+  }
+
   const results = project.sheets.filter((s) => s.kind === 'analysis').map((s) => s.results)
 
   return {
     tables,
+    tableForDataSet: (uid) => byDataSet.get(uid),
     linkage: (pointer) => {
       // The link names a path inside an analysis result, and a document has
       // few analyses, so the one holding that path is the one meant.
@@ -331,3 +348,55 @@ function blankAxis(): Axis {
 }
 
 export type { Mark, SeriesInfo }
+
+/**
+ * A graph sheet whose geometry is the legacy binary, drawn from what that
+ * binary does say.
+ *
+ * `planMvGraph` above handles the Multiple Variables graphs, which describe
+ * themselves in JSON and are therefore read rather than reconstructed. This
+ * handles the other nineteen in the corpus, which used to show nothing but a
+ * paragraph explaining that they could not be drawn.
+ *
+ * That paragraph is now out of date. The blob is framed, and three of its facts
+ * are legible: which datasets the graph plots, the range and scale of each
+ * axis, and the kind of graph it is. That is a chart - Prism's axes, Prism's
+ * choice of graph, our marks - and it is a great deal more use than a sentence
+ * saying the file is opaque.
+ *
+ * It stays `reconstructed`. The symbols, colours and spacing are still ours,
+ * and the badge has to keep meaning what it says.
+ */
+export function planGraphSheet(graph: GraphSheetView, ctx: MvContext): ChartSpec | undefined {
+  // Two ways a graph names its numbers. The legacy sheets list the datasets;
+  // a Multiple Variables sheet names the data sheet instead, and reaches here
+  // when its own JSON describes a figure this project cannot draw.
+  const tables = graph.inputDataSets
+    .map((uid) => ctx.tableForDataSet(uid))
+    .filter((t): t is { title: string; table: TableView } => t !== undefined)
+  const found =
+    tables[0] ??
+    (graph.mv?.dataSheet === undefined ? undefined : ctx.tables.get(graph.mv.dataSheet))
+  if (found === undefined) return undefined
+
+  const spec = planChart(found.table, graph.title, {
+    ...(graph.axes === undefined ? {} : { graphAxes: graph.axes }),
+    ...(graph.graphType === undefined ? {} : { graphType: graph.graphType }),
+  })
+  if (spec.marks.length === 0) return undefined
+
+  // A graph can plot several tables at once, and two in the corpus do: the
+  // nonlinear fit draws its raw XY points together with the fitted curve, which
+  // Prism keeps on a separate sheet. Only one table is drawn here, so the chart
+  // is a part of the graph rather than the graph, and it has to say so instead
+  // of presenting half a figure as the whole one.
+  const others = [...new Set(tables.map((t) => t.title))].filter((t) => t !== found.title)
+  if (others.length === 0) return spec
+  return {
+    ...spec,
+    notes: [
+      ...spec.notes,
+      `This graph also plots ${others.join(', ')}, which is not drawn here: only ${found.title} is.`,
+    ],
+  }
+}

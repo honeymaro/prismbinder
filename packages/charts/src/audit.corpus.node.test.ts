@@ -53,8 +53,21 @@ function checkSpec(spec: ChartSpec, where: string) {
 
   let maxSeries = -1
   let drawn = 0
-  const inX = (v: number) => v >= spec.axisX.min - 1e-9 && v <= spec.axisX.max + 1e-9
-  const inY = (v: number) => v >= spec.axisY.min - 1e-9 && v <= spec.axisY.max + 1e-9
+  /**
+   * An axis Prism drew may deliberately show less than the data.
+   *
+   * `Time line.pzt` ships an XY plot twice, whole and zoomed to 1995..2010 over
+   * data from 1918, and the silhouette plot in `Wine.prismt` starts its Y at
+   * 0.1 above values reaching 0. Where the bounds came from the file the marks
+   * outside them are not a defect, they are what Prism hides; the renderer
+   * clips them. Where the bounds are ours, nothing may fall outside, because we
+   * derived them from the very marks being checked.
+   */
+  const clipped = spec.notes.some((n) =>
+    n.startsWith('The axis range and scale are the ones Prism'),
+  )
+  const inX = (v: number) => clipped || (v >= spec.axisX.min - 1e-9 && v <= spec.axisX.max + 1e-9)
+  const inY = (v: number) => clipped || (v >= spec.axisY.min - 1e-9 && v <= spec.axisY.max + 1e-9)
 
   for (const m of spec.marks) {
     if ('series' in m) maxSeries = Math.max(maxSeries, m.series)
@@ -214,6 +227,11 @@ function checkSpec(spec: ChartSpec, where: string) {
  * every pie chart in the corpus as running off the page.
  */
 function coordsOf(node: El, out: { x: number[]; y: number[] } = { x: [], y: [] }) {
+  // A clipped subtree cannot draw outside its clip rectangle, and the
+  // rectangle is the plot area. Its marks' own coordinates may sit well
+  // outside the page - that is the point of clipping - so counting them here
+  // would report as invisible exactly what was hidden on purpose.
+  if (node.attrs['clip-path'] !== undefined) return out
   for (const [k, v] of Object.entries(node.attrs)) {
     if (k === 'd') {
       let cx = 0

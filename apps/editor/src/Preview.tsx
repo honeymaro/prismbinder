@@ -1,13 +1,14 @@
 import {
   allowedKinds,
   type ChartKind,
+  defaultHorizontal,
   defaultKind,
   type Provenance,
   planChart,
   WHISKER_RULES,
   type WhiskerRule,
 } from '@prismbinder/charts'
-import type { TableView } from '@prismbinder/model'
+import type { GraphAxis, TableView } from '@prismbinder/model'
 import { useMemo, useState } from 'react'
 import { ChartFigure } from './ChartFigure.js'
 
@@ -62,20 +63,28 @@ export function Preview({
   table,
   title,
   producedBy,
+  graphAxes,
+  graphType,
 }: {
   table: TableView
   title: string
   /** The analysis that wrote this sheet, which decides what its numbers are. */
   producedBy: Provenance | undefined
+  /** The axes Prism drew for this table, read out of the graph binary. */
+  graphAxes: readonly GraphAxis[] | undefined
+  /** The kind of graph Prism drew from this table, where the file states it. */
+  graphType: number | undefined
 }) {
   // `producedBy` matters here, not only in `planChart`. A results view's own
   // layout cannot say that its numbers are a survival curve, so without it the
   // staircase was missing from the menu and the sheet defaulted to a scatter.
   const kinds = useMemo(() => allowedKinds(table, producedBy), [table, producedBy])
-  const [kind, setKind] = useState<ChartKind>(() => defaultKind(table, producedBy))
+  const [kind, setKind] = useState<ChartKind>(() => defaultKind(table, producedBy, graphType))
   const [rule, setRule] = useState<WhiskerRule>('tukey')
   const [logY, setLogY] = useState(false)
-  const [horizontal, setHorizontal] = useState(false)
+  // Seeded from the graph, like the kind above. Prism draws a forest plot and
+  // a population pyramid on their side, and the file says so.
+  const [horizontal, setHorizontal] = useState(() => defaultHorizontal(graphType))
 
   const chosen = kinds.includes(kind) ? kind : (kinds[0] ?? 'scatter')
   const spec = useMemo(
@@ -86,8 +95,10 @@ export function Preview({
         logY,
         horizontal,
         ...(producedBy === undefined ? {} : { producedBy }),
+        ...(graphAxes === undefined ? {} : { graphAxes }),
+        ...(graphType === undefined ? {} : { graphType }),
       }),
-    [table, title, chosen, rule, logY, horizontal, producedBy],
+    [table, title, chosen, rule, logY, horizontal, producedBy, graphAxes, graphType],
   )
 
   if (spec.marks.length === 0) {

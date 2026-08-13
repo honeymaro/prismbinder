@@ -40,6 +40,7 @@ tools/legacy-analysis/res/
 tools/legacy-analysis/resrc/
 tools/legacy-analysis/tmpl/
 tools/legacy-analysis/**/__pycache__/
+tools/pcff/**/__pycache__/
 
 # Third-party bundles the measurement scripts import.
 #

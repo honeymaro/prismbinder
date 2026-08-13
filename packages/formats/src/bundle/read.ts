@@ -17,6 +17,7 @@ import {
   type ZipArchive,
   type ZipEntry,
 } from '@prismbinder/core'
+import { isPcffGraph, type PcffAxis, pcffGraph } from '../pcff/index.js'
 import type {
   AnalysisSheet,
   AxisSegment,
@@ -33,6 +34,26 @@ import type {
   PrismBundle,
   SimpleSheet,
 } from './types.js'
+
+/**
+ * The axes Prism drew, where the graph binary states them.
+ *
+ * Only the axis chunk is read; the rest of the blob is stepped over and
+ * carried through untouched, as it always was. A graph whose binary is absent,
+ * is not `PCFFGRA4`, or whose chunk framing does not hold simply reports no
+ * axes, and the chart above falls back to bounds derived from the data.
+ */
+function graphFacts(
+  ctx: Ctx,
+  id: string,
+): { axes: readonly PcffAxis[] | undefined; graphType: number | undefined } {
+  // Once. Reading the axes and the kind separately inflated the same entry
+  // twice and walked the whole blob twice, for every graph in the document.
+  const raw = bytes(ctx, `graphs/${id}/data.bin`)
+  if (raw === undefined || !isPcffGraph(raw)) return { axes: undefined, graphType: undefined }
+  const { axes, graphType } = pcffGraph(raw)
+  return { axes: axes.length === 0 ? undefined : axes, graphType }
+}
 
 /** Entry paths we understand. Anything else is carried through untouched. */
 const RE_DATA_SHEET = /^data\/sheets\/([^/]+)\/sheet\.json$/
@@ -59,6 +80,21 @@ interface Ctx {
   readonly archive: ZipArchive
   readonly bag: DiagnosticBag
   readonly byName: ReadonlyMap<string, ZipEntry>
+}
+
+/** An entry's inflated bytes, or nothing if it could not be read. */
+function bytes(ctx: Ctx, name: string): Uint8Array | undefined {
+  const e = ctx.byName.get(name)
+  if (e === undefined) return undefined
+  try {
+    const { value, diagnostics } = readEntry(e)
+    for (const d of diagnostics) ctx.bag.add(d)
+    if (diagnostics.some((d) => d.severity === 'error')) return undefined
+    return value
+  } catch (err) {
+    ctx.bag.error('bundle/entry-unreadable', name, 'entry could not be decompressed', err)
+    return undefined
+  }
 }
 
 function text(ctx: Ctx, name: string): string | undefined {
@@ -452,6 +488,7 @@ export function readBundle(
         json: doc,
         hasBinary: byName.has(`graphs/${id}/data.bin`),
         mv: readMvGraph(doc),
+        ...graphFacts(ctx, id),
         inputDataSets: stringArray(getMember(doc.root, 'inputDataSets')),
       })
       continue

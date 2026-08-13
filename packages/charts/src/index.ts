@@ -1,6 +1,7 @@
-export { type Linkage, type MvContext, mvContext, planMvGraph } from './mv.js'
+export { type Linkage, type MvContext, mvContext, planGraphSheet, planMvGraph } from './mv.js'
 export {
   allowedKinds,
+  defaultHorizontal,
   defaultKind,
   type ErrorKind,
   type PlanOptions,

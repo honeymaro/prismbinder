@@ -280,6 +280,18 @@ export function App() {
           <section className="content">
             {sheet !== null ? (
               <SheetView
+                /**
+                 * Keyed, so a sheet's own view state belongs to that sheet.
+                 *
+                 * React reuses a component instance when only its props change,
+                 * and the controls here are all sheet-scoped: "Plot the data"
+                 * is an action on this table, not a preference. Left unkeyed the
+                 * plot stayed open on the next sheet, its button read "Hide
+                 * plot" on a sheet nobody had opened, and a chart was computed
+                 * for every sheet merely visited. Three children were keyed one
+                 * at a time to patch the same leak before it was fixed here.
+                 */
+                key={sheet.id}
                 sheet={sheet}
                 edits={edits}
                 onEdit={loaded.bundle !== undefined ? onEdit : undefined}

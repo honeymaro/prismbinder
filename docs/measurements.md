@@ -77,8 +77,6 @@ entries uniquely attributable to any other combination: 0
 
 ---
 
----
-
 ## M3 - `.prism` vs `.prismt`: same format (2026-08-07) confirmed
 
 **Question**: the sample corpus contained **zero `.prism` files** - every modern-format sample GraphPad ships is a `.prismt` template. `create()` is committed scope, so we were about to write a format nobody had observed. How does a real document differ from a template?
@@ -457,6 +455,136 @@ one at a time and confirmed to fail the suite that now guards them.
 values, as Prism does, and say so in a note on the chart.
 
 ---
+
+## M16 - the graph binary is framed (2026-08-13)
+
+**The characterisation in M10 and in the editor's own placeholder was wrong.**
+`PCFFGRA4` was described here as a fixed-layout struct dump that could only be
+decoded field by field. It is not. It is a stream of tagged, length-prefixed
+chunks:
+
+```
+<u16 tag> <u32 length> <length bytes of payload>
+```
+
+Tags with bit 0x4000 set and 0x8000 clear are two-byte markers carrying neither
+length nor payload. With that one rule the walk covers **every byte of all 19
+graph binaries in the corpus, 522,078 of 522,078**. A walker that treats a
+marker as an ordinary header reads its neighbour as a length and lands nowhere,
+which is why the format looked structureless.
+
+The tags come in matched pairs. 0x8020 appears 265 times and 0x4020 appears 265
+times; 0x80ad and 0x40ad 171 times each; 0x8025 and 0x4025 171 each; and so on
+for every pair in the corpus. Bit 0x8000 opens a container whose payload is
+more chunks and bit 0x4000 closes it, so the format is a **nested tree**, closer
+to a binary XML than to a struct dump. An unknown chunk can be stepped over
+rather than guessed at, which is the property that makes anything here possible.
+
+### The axis chunk
+
+Tag 0x0017, 60 bytes, three per graph:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| +0 | double | lowest value plotted on this axis |
+| +8 | double | highest value plotted |
+| +16 | double | where the drawn axis starts |
+| +24 | double | where it ends |
+| +32 | double | where it crosses the other axis |
+| +46 | u16 | 0 linear, 1 logarithmic |
+
+Two independent things establish the reading rather than assuming it.
+
+**The data pair is checkable against the table.** For the Cities elbow plot it
+is exactly 1 and 42, the first and last value of the plotted X column, and
+0.0010405089565562735 and 84, the Y column to the last digit.
+
+**The scale flag came from a controlled pair.** `Geometric mean.pzt` ships the
+same data drawn twice, titled "Linear axis" and "Logarithmic axis". Aligned
+structurally the two blobs differ in 153 places, but inside this chunk they
+differ in exactly two: this flag, and the drawn bounds, which read 0 and 1000 on
+one and -1 and 3 on the other. **A logarithmic axis stores its bounds as powers
+of ten**, so -1 and 3 mean 0.1 to 1000, which is what brackets data running 1 to
+897.
+
+That controlled pair is the thing M15 said we did not have. We do have it, in a
+shipped sample, and it is worth looking for more of them before concluding that
+anything else needs a licence.
+
+### What it changed
+
+Charts of a sheet a graph was drawn from now use **Prism's own axis range and
+scale**. The elbow plot's WCSS runs 920.006 to 2301 and Prism draws 0 to 2500;
+no rule applied to the data produces 2500. The dose-response X is drawn
+logarithmically from 0.01 to 10000, which nothing in the numbers announces.
+
+Two consequences were not obvious beforehand:
+
+- **An axis need not contain its data.** `Time line.pzt` ships an XY plot whole
+  and again zoomed to 1995..2010 over data from 1918, and the Wine silhouette
+  plot starts its Y at 0.1 above values reaching 0. Prism clips, so the renderer
+  now clips too, or the hidden marks run across the labels and off the page.
+- **Position does not say which axis is which.** The column scatter in
+  `Time line.pzt` writes the value axis first and the two-column category axis
+  second. So an axis is matched by its recorded data extent against the numbers
+  about to be plotted, and one that matches nothing is left unused. The Y axis
+  of the nonlinear fit is refused on exactly these grounds: ours spans 4.63 to
+  112.24 because the chart draws error bars the recorded extent does not.
+
+### The graph kind
+
+There is no type field in the header - bytes 8 to 32 are identical across all
+70 blobs - but there is one in a chunk. Tag 0x0013, byte +14, exactly one per
+graph.
+
+**It states the graph's kind, not the table's**, and the shipped documents prove
+it: a `OneWay` column table produces **six different values** depending only on
+how someone chose to draw it. A table cannot say which of six graphs it became;
+the graph can.
+
+Reading the number needed names, and GraphPad supplies them. The Portfolio
+samples are one graph each and named after the graph they demonstrate:
+
+| Value | Documents drawn that way |
+|---|---|
+| 0 | 21 XY documents, plus Bland-Altman, Spaghetti plot, Insert a picture |
+| 1 | Pie chart, Donut plot, Percentage dot plot, Bubble Plot, Rainbow scatter, Points and grouped bars |
+| 2 | Bars extending left and right, Population pyramid, Odds ratio (Forest plot) |
+| 3 | Column scatter, Line between groups, QC graph, Scatter plot with bars |
+| 4 | Box and whiskers graph, Box and whiskers with asterisks |
+| 5 | Adjust spacing between bars, Grouped graph spacing |
+| 8 | Before-after, Before-after with error, a paired t test estimation plot |
+
+Every value except 1 is drawn by documents that agree with each other, and all
+three of value 2 are horizontal. **Value 1 is not understood** - it covers pie
+and donut charts alongside grouped bars and a bubble plot - and is deliberately
+left unmapped, so a table carrying it gets the chart it would have got with no
+graph at all. Values above 8 have never been seen, so survival, contingency and
+nested graphs remain unknown.
+
+Four charts in the corpus now change because of this, each one a case the table
+could not have settled:
+
+| Sheet | Was | Now |
+|---|---|---|
+| Paired t test estimation plot | scatter | before-after |
+| Multiple-comparisons interval plot | scatter | horizontal bars |
+| Nonlinear fit XY data | mean with error bars | XY, every replicate |
+| Dose-response Data 1 | mean with error bars | XY, every replicate |
+
+### One framing, both generations
+
+The stream starts at **offset 8**, immediately after the magic, and that was
+found by trying every offset and keeping the ones that consume the blob exactly.
+Offset 8 is the only one that works, and it works for **all 70 blobs**: the 19
+in third-generation bundles and the 51 held as `<Template>` inside
+second-generation XML documents. The earlier reader started at the uid chunk and
+worked by luck, skipping the first three chunks and failing on templates
+entirely - which is what made the second-generation blobs look like a different
+format.
+
+Widening from 19 samples to 70 is what made the graph kind readable. The corpus
+was already on disk.
 
 ---
 

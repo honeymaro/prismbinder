@@ -5,6 +5,7 @@ export {
   type ColumnView,
   cell,
   type DataSheetView,
+  type GraphAxis,
   type GraphSheetView,
   type InfoSheetView,
   type MvGraphView,

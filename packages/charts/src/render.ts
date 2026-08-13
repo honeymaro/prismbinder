@@ -203,9 +203,59 @@ function cartesian(
 
   const out: El[] = []
   out.push(...grid(spec, sx, sy, f, labels))
-  for (const mark of spec.marks) out.push(...renderMark(mark, spec, px, sx, sy, colour, f))
+
+  // Clipped to the plot area, because an axis need not contain what is plotted
+  // on it. Prism lets a graph show part of its data - `Time line.pzt` ships the
+  // same XY plot whole and again zoomed to 1995..2010 over data from 1918, and
+  // the silhouette plot in `Wine.prismt` starts its Y axis at 0.1 above values
+  // that reach 0 - and it clips the rest. Once a chart uses those stated bounds
+  // it has to clip too, or the marks Prism hides run across the labels and off
+  // the page.
+  const marks: El[] = []
+  for (const mark of spec.marks) marks.push(...renderMark(mark, spec, px, sx, sy, colour, f))
+  const clip = `pbclip-${clipId(spec, width, height)}`
+  out.push(
+    el('defs', {}, [
+      el('clipPath', { id: clip }, [
+        el('rect', { x: f.left, y: f.top, width: f.width, height: f.height }),
+      ]),
+    ]),
+    el('g', { 'clip-path': `url(#${clip})` }, marks),
+  )
+
   out.push(...legendOf(spec, f, colour, width, height))
   return out
+}
+
+/**
+ * A stable id for the clip path.
+ *
+ * Derived from the chart rather than drawn from a counter or a random number:
+ * two charts on one page must not share an id, and the same chart rendered
+ * twice must produce the same bytes or every snapshot of it churns.
+ */
+function clipId(spec: ChartSpec, width: number, height: number): string {
+  let h = 2166136261
+  // The axis bounds and the series names are in the hash because title, kind,
+  // size and mark count alone collide between charts of different data, and a
+  // page showing several at once would then have them share one clip
+  // rectangle.
+  for (const s of [
+    spec.title,
+    spec.kind,
+    String(width),
+    String(height),
+    String(spec.marks.length),
+    `${spec.axisX.min},${spec.axisX.max},${spec.axisX.kind}`,
+    `${spec.axisY.min},${spec.axisY.max},${spec.axisY.kind}`,
+    spec.series.map((x) => x.label).join(' '),
+  ]) {
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 16777619)
+    }
+  }
+  return (h >>> 0).toString(36)
 }
 
 function grid(spec: ChartSpec, sx: Scale, sy: Scale, f: Frame, labels: LabelPlan): El[] {

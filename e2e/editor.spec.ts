@@ -278,6 +278,35 @@ test('labels the plot as reconstructed rather than as Prism output', async ({ pa
   await expect(page.locator('.preview .badge', { hasText: 'reconstructed' })).toBeVisible()
 })
 
+test('the plot belongs to the sheet it was opened on', async ({ page }) => {
+  const file = sampleBundle()
+  test.skip(file === undefined, 'no Prism installation found')
+
+  await page.locator('input[type=file]').setInputFiles(file as string)
+  await expect(page.locator('table.grid')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Plot the data' }).click()
+  await expect(page.locator('.preview')).toBeVisible()
+
+  // Move to another data sheet. "Plot the data" is an action on one table, not
+  // a preference: left to React the instance is reused and the plot stayed
+  // open on a sheet nobody had opened it on, with its button reading "Hide
+  // plot" and a chart computed for every sheet merely visited.
+  // A second *data* sheet, not merely a second sheet: a graph sheet draws its
+  // own reconstruction and would satisfy the assertion below for the wrong
+  // reason.
+  const dataSheets = page.locator('.sheetgroup', {
+    has: page.getByRole('heading', { name: /^Data/ }),
+  })
+  const buttons = dataSheets.locator('li button')
+  const count = await buttons.count()
+  expect(count, 'the sample needs more than one data sheet').toBeGreaterThan(1)
+  await buttons.nth(1).click()
+
+  await expect(page.locator('.preview')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Plot the data' })).toBeVisible()
+})
+
 /** Resolves once the debounced autosave has actually landed on disk. */
 async function autosaveSettled(page: import('@playwright/test').Page): Promise<void> {
   await expect

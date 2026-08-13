@@ -18,6 +18,7 @@ function graph(over: Partial<GraphSheetView>): GraphSheetView {
     id: 'g1',
     title: 'A graph',
     opaque: false,
+    inputDataSets: [],
     mv: undefined,
     ...over,
   }
@@ -38,7 +39,7 @@ const LINKS: Linkage[] = [
   },
 ]
 
-const ctx: MvContext = { tables: new Map(), linkage: () => LINKS }
+const ctx: MvContext = { tables: new Map(), tableForDataSet: () => undefined, linkage: () => LINKS }
 
 const marksOf = <K extends Mark['kind']>(spec: { marks: readonly Mark[] }, kind: K) =>
   spec.marks.filter((m): m is Extract<Mark, { kind: K }> => m.kind === kind)
@@ -101,7 +102,11 @@ describe('dendrogram', () => {
   })
 
   it('refuses when the branches it points at are not there', () => {
-    const missing: MvContext = { tables: new Map(), linkage: () => undefined }
+    const missing: MvContext = {
+      tables: new Map(),
+      tableForDataSet: () => undefined,
+      linkage: () => undefined,
+    }
     const spec = planMvGraph(sheet, missing)
     expect(spec?.marks).toHaveLength(0)
     expect(spec?.notes.join(' ')).toMatch(/not in any analysis result/)
@@ -212,6 +217,7 @@ describe('heat map', () => {
     }
     const withTable: MvContext = {
       tables: new Map([['d1', { title: 'Data', table }]]),
+      tableForDataSet: () => undefined,
       linkage: () => undefined,
     }
     const spec = planMvGraph(

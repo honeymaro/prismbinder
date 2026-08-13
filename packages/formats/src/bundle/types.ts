@@ -1,4 +1,5 @@
 import type { JsonDocument, JsonNode, ZipArchive } from '@prismbinder/core'
+import type { PcffAxis } from '../pcff/index.js'
 
 /**
  * The modern Prism container: a ZIP holding JSON structure and CSV data.
@@ -208,6 +209,17 @@ export interface GraphSheet {
   /** Present only for a Multiple Variables graph. */
   readonly mv: MvGraph | undefined
   readonly inputDataSets: readonly string[]
+  /**
+   * The axes read out of the graph binary, when it states them.
+   *
+   * X, Y and the second Y, in the order the file writes them. This is the one
+   * part of the legacy geometry that is decoded rather than carried: the blob
+   * is a framed chunk stream, and the axis chunk is checkable against the data
+   * it plots. Everything else in there remains opaque.
+   */
+  readonly axes: readonly PcffAxis[] | undefined
+  /** The graph kind the binary states. See `pcffGraphType` for what is known. */
+  readonly graphType: number | undefined
 }
 
 export interface SimpleSheet {

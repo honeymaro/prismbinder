@@ -40,6 +40,22 @@ export interface DataSheetView {
   readonly title: string
   readonly table: TableView
   /**
+   * The axes of the graph Prism drew from this sheet, when there is one.
+   *
+   * A chart of this table can then use the range and scale Prism chose instead
+   * of bounds derived from the numbers, which is the difference between a
+   * picture of the same data and a picture of the same graph.
+   */
+  readonly graphAxes?: readonly GraphAxis[]
+  /**
+   * The kind of graph Prism drew from this sheet, as the file numbers them.
+   *
+   * A number, not a name: the enumeration is only partly known. See
+   * `pcffGraphType` in `@prismbinder/formats` for which values have been
+   * observed and on what evidence.
+   */
+  readonly graphType?: number
+  /**
    * The analysis that produced this sheet, when one did.
    *
    * A results view is a table of numbers until you know what made it. The same
@@ -105,6 +121,34 @@ export interface GraphSheetView {
    */
   readonly opaque: boolean
   readonly mv: MvGraphView | undefined
+  /**
+   * The axes stated in the graph binary, when it states them.
+   *
+   * The blob stays opaque as a whole; this is the one part of it that is
+   * framed, checkable and worth reading. See `@prismbinder/formats` for the
+   * chunk layout and for why the order of the three is not assumed.
+   */
+  readonly axes?: readonly GraphAxis[]
+  /** The kind of graph, as the file numbers them. See `pcffGraphType`. */
+  readonly graphType?: number
+  /**
+   * The datasets this graph plots, by uid.
+   *
+   * What turns a graph sheet from a name into something drawable: it says which
+   * table's numbers belong on those axes.
+   */
+  readonly inputDataSets: readonly string[]
+}
+
+/** One axis, as Prism drew it. */
+export interface GraphAxis {
+  /** Lowest and highest value plotted on this axis. */
+  readonly dataMin: number
+  readonly dataMax: number
+  /** Where the drawn axis begins and ends, in data units. */
+  readonly min: number
+  readonly max: number
+  readonly log: boolean
 }
 
 export interface InfoSheetView {
