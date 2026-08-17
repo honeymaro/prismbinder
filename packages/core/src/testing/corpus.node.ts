@@ -32,6 +32,12 @@ const DEFAULT_DIRS = [
   'C:/Program Files/GraphPad/Prism/SampleData/PartsOfWhole',
   'fixtures/authored',
   'fixtures/vendor',
+  // Fetched by `tools/fetch-external-fixtures.mjs`, and for a long time read by
+  // nothing. They were downloaded, listed in a manifest, and then invisible to
+  // every suite, which is how a `HugeTable` document sat on disk while the
+  // reader returned it as empty. A corpus that does not include a file it has
+  // is not a corpus.
+  'fixtures/external',
 ]
 
 /** Extra directories, e.g. PRISMBINDER_CORPUS_DIRS="D:/my-prism-files;E:/more". */

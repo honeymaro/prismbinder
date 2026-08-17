@@ -217,7 +217,7 @@ Numbers use MSVC three-digit exponents (`1.401298e-045`) and at most 10 signific
 
 Sample `.xml` files wrap the document in an XSLT stylesheet so a browser renders them as a table; the Prism payload is a literal result element inside. **Never feed these to an XSLT processor** - parse them as text.
 
-The shipped `PrismXMLSchema.xml` is XDR (a Microsoft pre-XSD dialect), describes itself as being for Prism 9.0, and is out of date: `CategoryDictionary` and twelve attributes including `CellType`, `UserText`, `MVType` and `num` are used but not declared, while `HugeTable`, `Table1024` and `Script` are declared but never appear.
+The shipped `PrismXMLSchema.xml` is XDR (a Microsoft pre-XSD dialect), describes itself as being for Prism 9.0, and is out of date: `CategoryDictionary` and twelve attributes including `CellType`, `UserText`, `MVType` and `num` are used but not declared, while `Table1024` and `Script` are declared but never appear. `HugeTable` is declared and does appear: it was absent from the original corpus and turned up in the wider one M11 added, in a document Prism 6.0f wrote.
 
 Out of date is not the same as useless. Where the schema *does* enumerate values it is authoritative, and the user guide points programmers at it for exactly this purpose. A writer must stay inside these sets:
 
@@ -259,9 +259,18 @@ The bundle also uses `view` for a results table, `control`, `obsolete` and `unde
 
 ---
 
-## 7. What we deliberately do not read
+## 7. What we do not author, and what little we read
 
-**PCFF** - the legacy binary holding graph geometry. Its body is a fixed-layout structure dump whose corresponding C++ model runs to hundreds of classes. We carry every such blob through byte-for-byte and never author one. Prism itself opens legacy files, so converting one is a matter of opening and re-saving it there.
+**PCFF** - the legacy binary holding graph geometry. We carry every such blob through byte-for-byte and **never author one**. Prism itself opens legacy files, so converting one is a matter of opening and re-saving it there.
+
+It is not the opaque structure dump this section used to call it. M16 measured the framing: a stream of tagged, length-prefixed chunks (`<u16 tag><u32 length><payload>`), where a tag with bit 0x4000 set and 0x8000 clear is a two-byte marker and a tag with 0x8000 set opens a container, and that rule accounts for **every byte of all 70 blobs on this machine**. Two chunks are read, both checkable against the data they describe:
+
+| Chunk | What is read |
+|---|---|
+| 0x0017, 60 bytes, three per graph | the extent plotted, the bounds Prism drew, and a linear/log flag |
+| 0x0013, byte +14 | the kind of graph, which the table cannot say |
+
+Everything else is stepped over. Reading more of it does not widen what we write: authoring PCFF stays out of scope.
 
 **Statistics.** Analysis results are read, displayed and exported. Recomputing them is a different project.
 

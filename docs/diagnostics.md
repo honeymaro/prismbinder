@@ -92,6 +92,7 @@ A ZIP states an entry's inflated size, and nothing makes that statement true. Th
 |---|---|---|
 | `pzfx/no-root` | error | No `GraphPadPrismFile` element, even after looking inside an XSLT wrapper. |
 | `pzfx/no-tables` | info | The document has no data tables. Two shipped samples are like this. |
+| `pzfx/unread-table-element` | warning | A root element named like a data table that this reader does not model, so its rows are not shown. Distinct from `no-tables`, which is a fact about the document rather than a limit of the reader; conflating the two is what let a `HugeTable` document read as empty. Prism's schema declares one such element we have never seen, `Table1024`. |
 | `pzfx/opaque-template` | info | Graphs, analyses and formatting are inside a `<Template>` blob that we carry but do not read. |
 
 ## Project (format dispatch)

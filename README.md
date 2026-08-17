@@ -34,7 +34,7 @@ Reading, editing and converting both formats works and is verified byte-for-byte
 | done | Browser app | open, browse, edit, undo, plot, autosave, save a copy, all client-side |
 | done | `convert` between formats | data crosses over intact; everything dropped is enumerated |
 | done | `create()` from nothing | a bundle built from a CSV opens in Prism with its titles and values intact |
-| never | Rendering graphs | out of scope, deliberately. See below |
+| never | Reproducing Prism's own figures | out of scope, deliberately. See below |
 | never | Recomputing statistics | out of scope, deliberately |
 
 `docs/measurements.md` records what has been executed and confirmed, separately from what is still assumed. `docs/format/` is the format specification that came out of the work.
@@ -58,6 +58,7 @@ Reading, editing and converting both formats works and is verified byte-for-byte
 | `@prismbinder/core` | ZIP, deflate, and byte-faithful JSON / XML / CSV primitives |
 | `@prismbinder/formats` | `.prism` / `.prismt` bundles and `.pzfx` XML documents |
 | `@prismbinder/model` | Format-neutral document model, conversion, anonymisation |
+| `@prismbinder/charts` | Charts drawn from the data, labelled as reconstructions rather than as Prism's figures |
 | `@prismbinder/cli` | `inspect`, `validate`, `extract`, `export`, `verify`, `anonymize`, `new`, `convert`, `diff` |
 | `apps/editor` | Browser app: drop a file, browse its sheets and tables |
 

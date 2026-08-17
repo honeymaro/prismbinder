@@ -48,6 +48,34 @@ describe.skipIf(files.length === 0)(`pzfx reader over ${files.length} documents`
     expect(cells).toBeGreaterThan(10000)
   })
 
+  it('reads a table out of every document that contains one', () => {
+    /**
+     * The sum above cannot see a single file returning zero, and for a long
+     * time one did: every `HugeTable` document read as empty. The lesson is
+     * M11's, one step further along - a suite is only as honest as the shape of
+     * what it asserts, not merely as the inputs it was shown.
+     *
+     * The expectation comes from the raw XML rather than from the reader, so
+     * this does not check the reader against itself.
+     *
+     * `/` is in the character class because every attribute of `Table` is
+     * optional in GraphPad's schema, so `<Table/>` is legal. No document has
+     * one, and if one arrives the mismatch surfaces as `read > declared`
+     * rather than being missed - but there is no reason to leave the sharp
+     * edge in.
+     */
+    const wrong: string[] = []
+    for (const f of files) {
+      const text = new TextDecoder().decode(f.bytes)
+      const declared = (text.match(/<(?:Huge)?Table[\s>/]/g) ?? []).length
+      const { value } = readPzfx(f.bytes, f.name)
+      const read = value?.tables.length ?? 0
+      if (declared > 0 && read === 0) wrong.push(`${f.name}: ${declared} declared, none read`)
+      if (read > declared) wrong.push(`${f.name}: read ${read} but only ${declared} declared`)
+    }
+    expect(wrong).toEqual([])
+  })
+
   it('tolerates ragged subcolumns rather than assuming a rectangle', () => {
     let ragged = 0
     for (const f of files) {

@@ -632,6 +632,121 @@ format.
 Widening from 19 samples to 70 is what made the graph kind readable. The corpus
 was already on disk.
 
+## M17 - an external audit, checked (2026-08-14) partly accepted
+
+An audit arrived as a nine-ticket work order. Every claim in it was checked
+against the code before anything was changed, which is the same rule this file
+applies to its own contents. Four tickets were accepted, two deferred as scope
+decisions, and three corrected or refused. What follows is what was verified.
+
+### Accepted: `HugeTable` documents read as empty
+
+`read.ts` collected `childElements(root, 'Table')` only. GraphPad's schema
+declares `HugeTable` beside it with the same content model and the same
+attributes, and Prism writes it for wide documents.
+
+```
+pzfx__column.pzfx            tables=1  data sheets=1
+pzfx__column_hugetable.pzfx  tables=0  data sheets=0   <- written by Prism 6.0f
+```
+
+Reading a real document as empty is the worst way to be wrong about a file:
+`inspect` printed nothing and exited 0, `convert` refused it, and the editor
+drew an empty grid. Nothing in any of those outputs said data had gone missing.
+
+The audit's risk assessment was right and worth repeating: `writePzfx` is
+`printXml(doc.xml)`, so the table list is a view and widening it cannot touch
+byte fidelity. Collected in one pass rather than two lists joined, so a mixed
+document keeps document order.
+
+### Accepted: the diagnostic was making a claim about the file
+
+`pzfx/no-tables` says the document has none. Using it for a document whose
+tables were simply not modelled states something false. `pzfx/unread-table-element`
+now covers that, at `warning` rather than `info`, because the data is not
+visible.
+
+The rule behind it is measured rather than guessed. Across the 135 XML
+documents on this machine the root has exactly eight kinds of child:
+
+| Count | Element |
+|---|---|
+| 159 | `Table` |
+| 135 | `Created`, `InfoSequence`, `TableSequence` |
+| 78 | `Info` |
+| 75 | `Template` |
+| 40 | `DefGraphButton` |
+| 1 | `HugeTable` |
+
+So anything else named like a table is new, and `TableSequence` is the one
+name that has to be excluded explicitly.
+
+### Accepted: the suite could not see this class of defect
+
+Two separate reasons, and the audit named the first:
+
+1. `expect(tables).toBeGreaterThan(100)` sums across files, so one file
+   returning zero is invisible. A per-file assertion now takes its expectation
+   from the raw XML rather than from the reader.
+2. **`fixtures/external` was not a corpus directory at all.** Twenty-four real
+   documents were fetched, listed in a manifest, and read by nothing. The
+   `HugeTable` document sat on disk while the reader returned it as empty. This
+   is the deeper cause and the audit did not name it.
+
+Widening the corpus immediately falsified a claim made three commits ago.
+`drawn-axes.corpus.node.test.ts` asserted that **every** graph sheet renders.
+True of the fourteen bundles GraphPad ships; false of
+`prism2R__demo_dataset.prism`, which has four graph sheets whose
+`inputDataSets` is an empty array. The file says those graphs plot nothing, so a
+placeholder is the honest answer. The assertion now says every graph that names
+data it can find is drawn, and that a blank one had nothing to find - which is
+strictly stronger, because a regression in resolving datasets can no longer hide
+among sheets that were always blank.
+
+### Corrected rather than accepted
+
+The audit asked for a documentation change asserting that GraphPad's Mac W3C
+XSD declares `Nested` under `ExtTableType` while the Windows XDR does not. That
+may well be true, but it rests on a vendor schema bundle not on this machine.
+The comment it wanted rewritten names `PrismXMLSchema.xml` specifically and is
+accurate about that file. **A measured statement is not replaced by an
+unverified one**, so this is left until the schemas are actually fetched.
+
+### Where the net actually is
+
+Worth being plain about, because the two are easy to confuse. The corpus suites
+run only where a corpus exists, and CI has neither a Prism installation nor the
+fetched external fixtures. So the per-file corpus assertion added here **never
+runs in CI**. What guards the regression there is `hugetable.test.ts`, which
+builds its documents as inline strings and therefore runs in both the Node and
+the Chromium projects. The corpus check is the wider net and the developer
+machine is where it is cast.
+
+The diagnostic is visible but not fatal. Every exit code in the CLI keys on
+`error` alone, so a document with an unread table element prints a warning and
+still exits 0. `inspect` shows it, since only `info` is filtered from that view.
+Making warnings fail a run would change the behaviour of every existing warning
+and is not something to decide inside this change.
+
+### What was not checked
+
+- The audit's ticket for validating writer output against GraphPad's published
+  XSD. It needs a vendor download, a patch to work around a UPA violation in the
+  vendor's own schema, and a new CI dependency. Nothing here says whether that
+  is worth it; it is a scope decision.
+- Opening our `.pzfx` output in Prism. The audit estimated thirty minutes on the
+  grounds that Prism is to hand. **The Prism on this machine is in Viewer mode**,
+  which can open a document but cannot re-save it, so the audit's third step is
+  not possible here at all.
+- Writing `ExtTableType`, and writing Info constants. Both are real gaps in
+  `createPzfx` and both were confirmed: the reader handles `ExtTableType` and
+  the writer never emits it, and the writer emits `<Info>` with a title and
+  nothing else. Neither is a defect in what exists; both are features that were
+  never built.
+- Everything in the audit's legal ticket. The quoted terms were not verified
+  against the vendor's published text, and choosing how to position this project
+  is not a judgement to make silently inside a commit.
+
 ---
 
 ## Outstanding - requires the Prism GUI

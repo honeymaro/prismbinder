@@ -64,6 +64,15 @@ export interface PzfxColumn {
 }
 
 export interface PzfxTable {
+  /**
+   * The element the table was written as.
+   *
+   * `Table` and `HugeTable` are siblings in GraphPad's own schema with the same
+   * content model and the same attributes, so reading them is identical. A
+   * writer is not free to pick, though: a document that came in as one must go
+   * back out as one, and the reader is the only place that still knows which.
+   */
+  readonly element: 'Table' | 'HugeTable'
   readonly id: string | undefined
   readonly title: string | undefined
   readonly tableType: string | undefined
@@ -142,13 +151,14 @@ function readColumn(el: XmlElement, role: PzfxColumnRole): PzfxColumn {
   }
 }
 
-function readTable(el: XmlElement): PzfxTable {
+function readTable(el: XmlElement, element: 'Table' | 'HugeTable'): PzfxTable {
   const titleEl = childElements(el, 'Title')[0]
   const rowTitlesEl = childElements(el, 'RowTitlesColumn')[0]
   const xEl = childElements(el, 'XColumn')[0]
   const xAdvancedEl = childElements(el, 'XAdvancedColumn')[0]
 
   return {
+    element,
     id: el.attributes.get('ID'),
     title: titleEl !== undefined ? textContent(titleEl) : undefined,
     tableType: el.attributes.get('TableType'),
@@ -189,7 +199,55 @@ export function readPzfx(bytes: Uint8Array, path = ''): ParseResult<PzfxDocument
   }
 
   const created = childElements(root, 'Created')[0]
-  const tables = childElements(root, 'Table').map(readTable)
+  // One pass over the root, keeping document order.
+  //
+  // **`HugeTable` is a data table too.** GraphPad's schema declares it beside
+  // `Table` with the same content model and the same attributes, and Prism
+  // writes it for wide documents: `pzfx__column_hugetable.pzfx`, written by
+  // Prism 6.0f, is a 53-replicate TwoWay table stored that way. Collecting only
+  // `Table` read that document as having no data at all - `inspect` reported
+  // nothing and exited 0, `convert` refused it, and the editor drew an empty
+  // grid - which is the worst way to be wrong about a file: silently.
+  //
+  // Not two passes concatenated. A document mixing the two would then come out
+  // in an order that matches neither the file nor its own `TableSequence`.
+  const tables: PzfxTable[] = []
+  for (const el of childElements(root)) {
+    const name = localName(el.name)
+    if (name === 'Table' || name === 'HugeTable') tables.push(readTable(el, name))
+  }
+  // A table element we do not model is not the same thing as no tables, and
+  // saying the latter is how the `HugeTable` defect stayed invisible: the
+  // document reported "no data tables" and that reads as a fact about the file
+  // rather than a limit of the reader.
+  //
+  // Matching on the name is exact rather than loose, which is worth stating
+  // because it does not look it. GraphPad's own `PrismXMLSchema.xml` declares
+  // exactly four element types whose name contains `Table`: `Table`,
+  // `HugeTable`, `TableSequence` and `Table1024`. The first three are handled
+  // above; the fourth is the one this exists for and has never been seen in a
+  // document. So there is nothing in the vendor's vocabulary for this to fire
+  // on by accident.
+  //
+  // The corpus agrees: across the XML documents on this machine the root has
+  // eight kinds of child - `Table`, `Created`, `InfoSequence`, `TableSequence`,
+  // `Info`, `Template`, `DefGraphButton` and `HugeTable`.
+  //
+  // `warning` rather than `error`, and the difference is visible: the CLI keys
+  // every exit code on `error` alone, so this is printed and does not fail a
+  // pipeline. That is the right trade for a heuristic, and it does mean a
+  // document with an unread table still exits 0.
+  for (const el of childElements(root)) {
+    const name = localName(el.name)
+    if (name === 'Table' || name === 'HugeTable' || name === 'TableSequence') continue
+    if (!name.includes('Table')) continue
+    bag.warn(
+      'pzfx/unread-table-element',
+      path,
+      `<${name}> looks like a data table and this reader does not model it, so its rows are not shown`,
+    )
+  }
+
   if (tables.length === 0) {
     bag.info('pzfx/no-tables', path, 'document contains no data tables')
   }

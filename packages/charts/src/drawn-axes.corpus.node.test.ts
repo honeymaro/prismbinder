@@ -218,11 +218,23 @@ describe.skipIf(bundles.length === 0)('graph sheets whose geometry is the legacy
     .map((f) => readProject(f.bytes, f.name).value)
     .filter((p) => p !== undefined)
 
-  it('draws every graph in the corpus, rather than explaining that it cannot', () => {
-    // The blob is not decoded and will not be. What it does say - the datasets
-    // plotted, each axis, the kind of graph - is enough for a chart, and a
-    // chart is more use than a paragraph. Before this every one of these sheets
-    // showed "Not rendered".
+  it('draws every graph that names data it can find', () => {
+    /**
+     * The blob is not decoded and will not be. What it does say - the datasets
+     * plotted, each axis, the kind of graph - is enough for a chart, and a
+     * chart is more use than a paragraph. Before this every one of these sheets
+     * showed "Not rendered".
+     *
+     * **Not "every graph".** That was asserted here first and held only for the
+     * fourteen bundles GraphPad ships. A real user document,
+     * `prism2R__demo_dataset.prism`, has four graph sheets whose
+     * `inputDataSets` is an empty array: the file says they plot nothing, and
+     * a placeholder is then the honest answer rather than a failure. The
+     * assertion below is the one that stays true, and it is stronger for it -
+     * a graph left blank must have had no data to find, so a regression in
+     * resolving datasets shows up here rather than hiding among the ones that
+     * were always blank.
+     */
     let blank = 0
     let drawn = 0
     for (const p of projects) {
@@ -234,12 +246,22 @@ describe.skipIf(bundles.length === 0)('graph sheets whose geometry is the legacy
           drawn++
           continue
         }
-        if (planGraphSheet(s, ctx) !== undefined) drawn++
-        else blank++
+        if (planGraphSheet(s, ctx) !== undefined) {
+          drawn++
+          continue
+        }
+        blank++
+        const findable = s.inputDataSets.some((uid) => ctx.tableForDataSet(uid) !== undefined)
+        expect(findable, `${s.title} was left blank with data it could have drawn`).toBe(false)
       }
     }
+    // No ratio between the two. A first version required `drawn > blank * 4`,
+    // which passes today at 41 against 4 and is a number chosen rather than
+    // measured: a corpus that gained more legitimately blank documents would
+    // fail it for no reason. The per-sheet check above is what carries the
+    // correctness, and this only says the sweep found something to check.
     expect(drawn).toBeGreaterThan(20)
-    expect(blank).toBe(0)
+    expect(blank).toBeLessThan(drawn)
   })
 
   it('still says the marks are ours, whatever the file settled', () => {
